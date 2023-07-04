@@ -15,6 +15,7 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import wandb
 
 from runners.utils.collector import SampleCollector
 from runners.utils.collision import CollisionPreprocessor
@@ -70,7 +71,7 @@ class Config:
 
 
 class Runner(nn.Module):
-    def __init__(self, model: nn.Module, criterion_dict: Dict[str, nn.Module], mcfg: DictConfig):
+    def __init__(self, model: nn.Module, criterion_dict: Dict[str, nn.Module], mcfg: DictConfig, create_wandb=False):
         super().__init__()
 
         self.model = model
@@ -83,6 +84,10 @@ class Runner(nn.Module):
         self.sample_collector = SampleCollector(mcfg)
         self.collision_solver = CollisionPreprocessor(mcfg)
         self.random_material = RandomMaterial(mcfg.material)
+
+        if create_wandb:
+            wandb.login()
+            self.wandb_run = wandb.init(project='HOOD')
 
     def valid_rollout(self, sequence, n_steps=-1, bare=False, record_time=False):
         """
@@ -358,7 +363,7 @@ def run_epoch(training_module: Runner, aux_modules: dict, dataloader: DataLoader
         scheduler_to_pass = scheduler if global_step >= training_module.mcfg.warmup_steps else None
         ld_to_write = training_module(sample, roll_steps=roll_steps, optimizer=optimizer_to_pass,
                                       scheduler=scheduler_to_pass)
-
+        training_module.wandb_run.log(ld_to_write, step=global_step)
         # save checkpoint every `save_checkpoint_every` steps
         if global_step % cfg.experiment.save_checkpoint_every == 0:
             checkpoint_path = os.path.join(checkpoints_dir, f"step_{global_step:010d}.pth")

@@ -163,7 +163,7 @@ def create_runner(modules: dict, config: DictConfig, create_aux_modules=True):
         criterions[criterion_name] = criterion
 
     # create Runner object from the specified runner module
-    runner = runner_module.Runner(model, criterions, runner_config)
+    runner = runner_module.Runner(model, criterions, runner_config, create_aux_modules)
 
     # create optimizer and scheduler from the specified runner module
     aux_modules = dict()
