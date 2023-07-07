@@ -44,6 +44,7 @@ class Config:
 
     betas_file: Optional[
         str] = None  # Path to the file with the table of beta parameters (used in validation to generate sequences with specific body shapes)
+    keep_length: bool = False  # Whether to keep the length of the sequence (used in validation), if False, the output will have 2 less frames
 
 
 def make_obstacle_dict(mcfg: Config) -> dict:
@@ -665,6 +666,16 @@ class SequenceLoader:
         """
         #
         # from SNUG, eliminates hand-body penetrations
+        if self.mcfg.keep_length:
+            sequence['body_pose'] = np.concatenate([
+                np.tile(sequence['body_pose'][0:1], (2, 1)),
+                sequence['body_pose']], axis=0)
+            sequence['global_orient'] = np.concatenate([
+                np.tile(sequence['global_orient'][0:1], (2, 1)),
+                sequence['global_orient']], axis=0)
+            sequence['transl'] = np.concatenate([
+                np.tile(sequence['transl'][0:1], (2, 1)),
+                sequence['transl']], axis=0)
         if self.mcfg.separate_arms:
             body_pose = sequence['body_pose']
             global_orient = sequence['global_orient']

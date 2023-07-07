@@ -19,13 +19,15 @@ config_dict['bending_coeff'] = 3.962e-05
 # config_dict['bending_coeff'] = 1e-7
 
 garment_name = 'tshirt'
-
+save_name = 'tshirt_stretch_simulation'
 
 # If True, the SMPL poses are slightly modified to avoid hand-body self-penetrations. The technique is adopted from the code of SNUG
 config_dict['separate_arms'] = False
 # Paths to SMPL model and garments_dict file relative to $HOOD_DATA/aux_data
 config_dict['garment_dict_file'] = 'garments_dict.pkl'
 config_dict['smpl_model'] = 'smpl/SMPL_NEUTRAL.pkl'
+config_dict['collision_eps'] = 4e-3
+config_dict['keep_length'] = True
 validation_config = ValidationConfig(**config_dict)
 
 config_name = 'postcvpr'
@@ -43,10 +45,19 @@ runner_module, runner = load_runner_from_checkpoint(checkpoint_path, modules, ex
 
 # file with the pose sequence
 # sequence_path =  Path(HOOD_DATA) / 'temp/01_01.pkl'
-sequence_path = Path(DEFAULTS.vto_root) / 'smpl_parameters' / 'c1.pkl'
+sequence_path = Path(DEFAULTS.vto_root) / 'smpl_parameters' / 'stretch.pkl'
 
 
 dataloader = create_one_sequence_dataloader(sequence_path, garment_name, modules, experiment_config)
 sequence = next(iter(dataloader))
 sequence = move2device(sequence, 'cuda:0')
-trajectories_dict = runner.valid_rollout(sequence,  bare=True)
+trajectories_dict = runner.forward_simulation(sequence, start_step=0, n_steps=300)
+# Save the sequence to disc
+out_path = Path(DEFAULTS.data_root) / 'temp' / f'{save_name}.pkl'
+print(f"Rollout saved into {out_path}")
+pickle_dump(dict(trajectories_dict), out_path)
+
+from utils.show import write_video, save_as_pc2
+# from aitviewer.headless import HeadlessRenderer
+
+save_as_pc2(out_path, Path(DEFAULTS.data_root) / 'temp', save_mesh=True, prefix=save_name)

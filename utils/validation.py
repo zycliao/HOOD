@@ -26,7 +26,8 @@ class Config:
     lame_lambda: Optional[float] = 44400
     bending_coeff: Optional[float] = 3.9625778333333325e-05
 
-
+    collision_eps: Optional[float] = None  # Collision epsilon
+    keep_length: bool = None              # Whether to keep the length of the sequence constant
     restpos_scale: Optional[float] = None   # if set, scales canonical geometries of garments by that value
     zero_betas: bool = False                # Whether to set the beta parameters to zero
 
@@ -62,6 +63,7 @@ def update_config_for_validation(experiment_config: DictConfig, validation_confi
     :return: updated experiment config
     """
     dataset_name = list(experiment_config.dataloader.dataset.keys())[0]
+    criterion_name = list(experiment_config.criterions.keys())[0].split('.')[0]
 
     if validation_config.data_root is not None:
         experiment_config.dataloader.dataset[dataset_name].data_root = validation_config.data_root
@@ -76,6 +78,8 @@ def update_config_for_validation(experiment_config: DictConfig, validation_confi
         experiment_config.dataloader.dataset[dataset_name].restpos_scale_max = validation_config.restpos_scale
     if validation_config.separate_arms is not None:
         experiment_config.dataloader.dataset[dataset_name].separate_arms = validation_config.separate_arms
+    if validation_config.keep_length is not None:
+        experiment_config.dataloader.dataset[dataset_name].keep_length = validation_config.keep_length
 
     if validation_config.obstacle_dict_file is not None:
         experiment_config.dataloader.dataset[dataset_name].obstacle_dict_file = validation_config.obstacle_dict_file
@@ -83,7 +87,8 @@ def update_config_for_validation(experiment_config: DictConfig, validation_confi
         experiment_config.dataloader.dataset[dataset_name].random_betas = validation_config.random_betas
     if validation_config.zero_betas is not None:
         experiment_config.dataloader.dataset[dataset_name].zero_betas = validation_config.zero_betas
-
+    if validation_config.collision_eps is not None:
+        experiment_config.criterions[criterion_name+'.collision_penalty'].eps = validation_config.collision_eps
     experiment_config.dataloader.batch_size = 1
     experiment_config.dataloader.num_workers = 0
     experiment_config.dataloader.dataset[dataset_name].wholeseq = True
