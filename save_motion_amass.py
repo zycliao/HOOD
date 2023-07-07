@@ -3,7 +3,7 @@ import numpy as np
 import pickle as pkl
 import smplx
 from scipy.spatial.transform import Rotation as R
-from utils.pose_sequence import PoseSequence, slerp
+from utils.pose_sequence import PoseSequence, slerp, quat_to_axis_angle
 from utils.show import writePC2
 
 
@@ -16,16 +16,18 @@ save_mesh = True
 
 os.makedirs(out_dir, exist_ok=True)
 
-sequence = PoseSequence(input_motion_path)
+sequence = PoseSequence(input_motion_path, True)
 poses, transl = sequence.get_by_fps(target_fps, True)
-body_pose = poses[:, 4:4*24]
-global_orient = poses[:, :4]
+body_pose = poses[:, 1:]
+global_orient = poses[:, 0]
 betas = np.zeros((10,), dtype=np.float32)
 
 # transition from T-pose to first pose
 if transition_time > 0:
     transition_frames = int(transition_time * target_fps)
-    transition_pose = slerp(np.zeros_like(body_pose[0]), body_pose[0], np.linspace(0, 1, transition_frames+1))
+    zero_pose = np.zeros_like(body_pose[0:1])
+    zero_pose[:, :, 3] = 1
+    transition_pose = slerp(zero_pose, body_pose[0:1], np.linspace(0, 1, transition_frames+1))
     transition_pose = transition_pose[:-1]
     body_pose = np.concatenate([transition_pose, body_pose], axis=0)
     transition_transl = np.tile(transl[0], (transition_frames, 1))
@@ -36,10 +38,10 @@ if transition_time > 0:
 new_global_orient = []
 new_body_pose = []
 for i in range(len(global_orient)):
-    r = R.from_quat(global_orient[i])
-    new_global_orient.append(r.as_rotvec())
-    r = R.from_quat(body_pose[i])
-    new_body_pose.append(r.as_rotvec())
+    # r = R.from_quat(global_orient[i])
+    new_global_orient.append(quat_to_axis_angle(global_orient[i]))
+    # r = R.from_quat(body_pose[i])
+    new_body_pose.append(quat_to_axis_angle(body_pose[i]).reshape([-1]))
 body_pose = np.stack(new_body_pose, axis=0)
 global_orient = np.stack(new_global_orient, axis=0)
 

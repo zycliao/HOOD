@@ -2,7 +2,18 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 def slerp(q0, q1, r):
-    r = np.expand_dims(r, axis=[-2, -1])
+    """
+    Spherical linear interpolation.
+    :param q0, q1: (N, 4) or (N, T, 4) (N can be 1 for broadcasting)
+    :param r: (N,)
+    """
+    assert q0.shape == q1.shape and q0.shape[-1] == 4, f"q0 shape: {q0.shape}, q1 shape: {q1.shape}"
+    if q0.ndim == 3:
+        r = np.expand_dims(r, axis=[-2, -1])
+    elif q0.ndim == 2:
+        r = np.expand_dims(r, axis=[-1])
+    else:
+        raise ValueError(f"q0 ndim: {q0.ndim}")
     dot = (q0 * q1).sum(-1, keepdims=True)
     dot = np.clip(dot, -1, 1)
     omega = np.arccos(dot) + 1e-8
@@ -12,14 +23,36 @@ def slerp(q0, q1, r):
     return w0 * q0 + w1 * q1
 
 
+# def axis_angle_to_quat(rotvec):
+#     angle = np.linalg.norm(rotvec, axis=-1)[..., None] + np.finfo(float).eps
+#     axis = rotvec / angle
+#     sin = np.sin(angle / 2)
+#     w = np.cos(angle / 2)
+#     return np.concatenate((w, sin * axis), axis=-1)
+#
+#
+# def quat_to_axis_angle(quat):
+#     angle = 2 * np.arccos(quat[..., 0:1])
+#     axis = quat[..., 1:] * (1 / (np.sin(angle / 2) + np.finfo(float).eps))
+#     return angle * axis
+
+
 def axis_angle_to_quat(rotvec):
-    angle = np.linalg.norm(rotvec, axis=-1)[..., None] + np.finfo(float).eps
-    axis = rotvec / angle
-    sin = np.sin(angle / 2)
-    w = np.cos(angle / 2)
-    return np.concatenate((w, sin * axis), axis=-1)
+    orig_shape = rotvec.shape
+    rotvec = rotvec.reshape([-1, 3])
+    quat = R.from_rotvec(rotvec).as_quat()
+    return quat.reshape(orig_shape[:-1] + (4,))
+
+
+def quat_to_axis_angle(quat):
+    orig_shape = quat.shape
+    quat = quat.reshape([-1, 4])
+    rotvec = R.from_quat(quat).as_rotvec()
+    return rotvec.reshape(orig_shape[:-1] + (3,))
+
+
 class PoseSequence:
-    def __init__(self, npz_file, is_amass=False):
+    def __init__(self, npz_file, is_amass=True):
         with np.load(npz_file) as data:
             self.poses = data["poses"].astype(np.float32)
             self.trans = data["trans"].astype(np.float32)
