@@ -57,15 +57,26 @@ class RandomMaterial:
             
         return bending_coeff, bending_coeff_input
     
-    def add_material(self, sample, cloth_obj):
+    def add_material(self, sample, cloth_obj, material_dict=None):
 
         B = sample.num_graphs
         device = sample['cloth'].pos.device
         
-        density = self.get_density(device, B)
-        lame_mu, lame_mu_input = self.get_lame_mu(device, B)
-        lame_lambda, lame_lambda_input = self.get_lame_lambda(device, B)
-        bending_coeff, bending_coeff_input = self.get_bending_coeff(device, B)
+        if material_dict is None:
+            density = self.get_density(device, B)
+            lame_mu, lame_mu_input = self.get_lame_mu(device, B)
+            lame_lambda, lame_lambda_input = self.get_lame_lambda(device, B)
+            bending_coeff, bending_coeff_input = self.get_bending_coeff(device, B)
+        else:
+            density = material_dict['density']
+            lame_mu = material_dict['lame_mu']
+            lame_lambda = material_dict['lame_lambda']
+            bending_coeff = material_dict['bending_coeff']
+            lame_mu_input = relative_between_log(self.mcfg.lame_mu_min, self.mcfg.lame_mu_max, lame_mu)
+            lame_lambda_input = relative_between(self.mcfg.lame_lambda_min, self.mcfg.lame_lambda_max, lame_lambda)
+            bending_coeff_input = relative_between_log(self.mcfg.bending_coeff_min, self.mcfg.bending_coeff_max,
+                                                         bending_coeff)
+
         bending_multiplier = self.mcfg.bending_multiplier
         
         

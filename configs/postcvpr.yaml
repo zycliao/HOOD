@@ -27,7 +27,7 @@ dataloader:
   dataset:
     postcvpr:
       data_root: 'smpl_parameters'
-      smpl_model: 'smpl/SMPL_FEMALE.pkl'
+      smpl_model: 'smpl/SMPL_NEUTRAL.pkl'
       garment_dict_file: 'garments_dict.pkl'
       split_path: 'datasplits/train.csv'
       lookup_steps: 5

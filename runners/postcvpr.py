@@ -89,6 +89,82 @@ class Runner(nn.Module):
             wandb.login()
             self.wandb_run = wandb.init(project='HOOD')
 
+    def rollout_material(self, sequence, material_dict, start_step=0, n_steps=-1, bare=False, record_time=False):
+        """
+        Generates a trajectory for the full sequence, use this function for inference
+
+        :param sequence: torch geometric batch with the sequence
+        :param material_dict: dict with material properties, the value should be torch.Tensor
+        :param n_steps: number of steps to predict, if -1, predicts for the full sequence
+        :param bare: if true, the loss terms are not computed, use for faster validation
+        :param record_time: if true, records the time spent on the forward pass and adds it to trajectories_dicts['metrics']
+        :return: trajectories_dicts: dict with the following fields:
+            'pred': np.ndarray (NxVx3) predicted cloth trajectory
+            'obstacle': np.ndarray (NxWx3) body trajectory
+            'cloth_faces': np.ndarray (Fx3) cloth faces
+            'obstacle_faces': np.ndarray (Fox3) body faces
+            'metrics': dictionary with by-frame loss values
+        """
+        sequence = add_field_to_pyg_batch(sequence, 'iter', [0], 'cloth', reference_key=None)
+        sequence = self.add_cloth_obj(sequence, material_dict)
+
+        n_samples = sequence['obstacle'].pos.shape[1]
+        if n_steps > 0:
+            n_samples = min(n_samples, n_steps)
+
+        trajectories_dicts = defaultdict(lambda: defaultdict(list))
+
+        if record_time:
+            st_time = time.time()
+
+        # trajectory, obstacle_trajectory, metrics_dict = self._rollout(sequence, n_samples,
+        #                                                               progressbar=True, bare=bare)
+
+        trajectory = []
+        obstacle_trajectory = []
+
+        metrics_dict = defaultdict(list)
+
+        progressbar = True
+        pbar = range(start_step, start_step+n_samples)
+        if progressbar:
+            pbar = tqdm(pbar)
+
+        prev_out_dict = None
+        for i in pbar:
+            state = self.collect_sample_wholeseq(sequence, i, prev_out_dict)
+
+            if i == 0:
+                state = self.collision_solver.solve(state)
+
+            with torch.no_grad():
+                state = self.model(state, is_training=False)
+
+            trajectory.append(state['cloth'].pred_pos.detach().cpu().numpy())
+            obstacle_trajectory.append(state['obstacle'].target_pos.detach().cpu().numpy())
+
+            if not bare:
+                loss_dict = self.criterion_pass(state)
+                for k, v in loss_dict.items():
+                    metrics_dict[k].append(v.item())
+            prev_out_dict = state.clone()
+
+
+        if record_time:
+            total_time = time.time() - st_time
+            metrics_dict['time'] = total_time
+
+        trajectories_dicts['pred'] = trajectory
+        trajectories_dicts['obstacle'] = obstacle_trajectory
+        trajectories_dicts['metrics'] = dict(metrics_dict)
+        trajectories_dicts['cloth_faces'] = sequence['cloth'].faces_batch.T.cpu().numpy()
+        trajectories_dicts['obstacle_faces'] = sequence['obstacle'].faces_batch.T.cpu().numpy()
+
+        for s in ['pred', 'obstacle']:
+            trajectories_dicts[s] = np.stack(trajectories_dicts[s], axis=0)
+        return trajectories_dicts
+
+
     def valid_rollout(self, sequence, n_steps=-1, bare=False, record_time=False):
         """
         Generates a trajectory for the full sequence, use this function for inference
@@ -200,22 +276,22 @@ class Runner(nn.Module):
         sample_step = self.sample_collector.add_timestep(sample_step, ts)
         return sample_step
 
-    def set_random_material(self, sample):
+    def set_random_material(self, sample, material_dict=None):
         """
         Add material parameters to the cloth object and the sample
         :param sample:
         :return:
         """
-        sample, self.cloth_obj = self.random_material.add_material(sample, self.cloth_obj)
+        sample, self.cloth_obj = self.random_material.add_material(sample, self.cloth_obj, material_dict=material_dict)
         return sample
 
-    def add_cloth_obj(self, sample):
+    def add_cloth_obj(self, sample, material_dict=None):
         """
         - Updates self.cloth_obj with the cloth object in the sample
         - Samples the material properties of the cloth object and adds them to the sample
         - Adds info about the garment to the sample, which is later used by the the GNN and to compute objective terms (see utils.cloth_and_material.ClothMatAug for details)
         """
-        sample = self.set_random_material(sample)
+        sample = self.set_random_material(sample, material_dict=material_dict)
         sample = self.cloth_obj.set_batch(sample, overwrite_pos=self.mcfg.overwrite_pos_every_step)
         sample['cloth'].cloth_obj = self.cloth_obj
         return sample

@@ -1,6 +1,14 @@
 import os
 import numpy as np
 import pickle as pkl
+from utils.show import writePC2
+
+def smooth_iter(x, alpha=0.01):
+    # padding
+    x2 = np.concatenate([x[0:1], x, x[-2:-1]], 0)
+    dst = (x2[:-2] + x2[2:]) / 2
+    x = (dst - x) * alpha + x
+    return x
 
 smpl_param_dir = "/root/data/cloth_recon/c1/param_smpl"
 out_dir = "/root/data/hood_data/vto_dataset/smpl_parameters"
