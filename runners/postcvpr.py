@@ -90,7 +90,8 @@ class Runner(nn.Module):
             wandb.login()
             self.wandb_run = wandb.init(project='HOOD')
 
-    def rollout_material(self, sequence, material_dict, start_step=0, n_steps=-1, bare=False, record_time=False):
+    def rollout_material(self, sequence, material_dict=None, start_step=0, n_steps=-1, bare=False, record_time=False,
+                         ext_force=None):
         """
         Generates a trajectory for the full sequence, use this function for inference
 
@@ -106,8 +107,8 @@ class Runner(nn.Module):
             'obstacle_faces': np.ndarray (Fox3) body faces
             'metrics': dictionary with by-frame loss values
         """
-        sequence = add_field_to_pyg_batch(sequence, 'iter', [0], 'cloth', reference_key=None)
-        sequence = self.add_cloth_obj(sequence, material_dict)
+        with torch.no_grad():
+            sequence = add_field_to_pyg_batch(sequence, 'iter', [0], 'cloth', reference_key=None)
 
         n_samples = sequence['obstacle'].pos.shape[1]
         if n_steps > 0:
@@ -126,22 +127,12 @@ class Runner(nn.Module):
 
         metrics_dict = defaultdict(list)
 
-        progressbar = True
-        pbar = range(start_step, start_step+n_samples)
-        if progressbar:
-            pbar = tqdm(pbar)
-
         prev_out_dict = None
-        for i in pbar:
-            state = self.collect_sample_wholeseq(sequence, i, prev_out_dict)
+        for i in range(start_step, start_step+n_samples):
+            state = self.collect_sample_wholeseq(sequence, i, prev_out_dict, material_dict=material_dict)
+            state = self.model(state, is_training=False, ext_force=ext_force)
 
-            if i == 0:
-                state = self.collision_solver.solve(state)
-
-            with torch.no_grad():
-                state = self.model(state, is_training=False)
-
-            trajectory.append(state['cloth'].pred_pos.detach().cpu().numpy())
+            trajectory.append(state['cloth'].pred_pos)
             obstacle_trajectory.append(state['obstacle'].target_pos.detach().cpu().numpy())
 
             if not bare:
@@ -150,7 +141,7 @@ class Runner(nn.Module):
                     metrics_dict[k].append(v.item())
             prev_out_dict = state.clone()
 
-
+        self.state = state
         if record_time:
             total_time = time.time() - st_time
             metrics_dict['time'] = total_time
@@ -161,8 +152,9 @@ class Runner(nn.Module):
         trajectories_dicts['cloth_faces'] = sequence['cloth'].faces_batch.T.cpu().numpy()
         trajectories_dicts['obstacle_faces'] = sequence['obstacle'].faces_batch.T.cpu().numpy()
 
-        for s in ['pred', 'obstacle']:
+        for s in ['obstacle']:
             trajectories_dicts[s] = np.stack(trajectories_dicts[s], axis=0)
+        trajectories_dicts['pred'] = trajectories_dicts['pred'][0]
         return trajectories_dicts
 
     def forward_simulation(self, sequence, material_dict=None, start_step=0, n_steps=-1, bare=False, record_time=False):
@@ -347,7 +339,7 @@ class Runner(nn.Module):
             prev_out_dict = state.clone()
         return trajectory, obstacle_trajectory, metrics_dict
 
-    def collect_sample_wholeseq(self, sequence, index, prev_out_dict):
+    def collect_sample_wholeseq(self, sequence, index, prev_out_dict, material_dict=None):
 
         """
         Collects a sample from the sequence, given the previous output and the index of the current step
@@ -359,7 +351,8 @@ class Runner(nn.Module):
         :param prev_out_dict: previous output of the model
 
         """
-        sample_step = deepcopy(sequence.clone())
+        sample_step = sequence.clone()
+        sample_step = self.add_cloth_obj(sample_step, material_dict)
 
         # gather infor for the current step
         sample_step = self.sample_collector.sequence2sample(sample_step, index)

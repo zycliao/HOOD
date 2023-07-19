@@ -7,8 +7,6 @@ experiment:
 runner:
   postcvpr:
     warmup_steps: 100
-    initial_ts: 3.333333333333333e-1
-    regular_ts: 1e-2
     optimizer:
       lr: 5e-5
       decay_steps: 50_000
@@ -31,8 +29,8 @@ dataloader:
     postcvpr:
       data_root: 'smpl_parameters'
       smpl_model: 'smpl/SMPL_NEUTRAL.pkl'
-      garment_dict_file: 'garments_dict_c1.pkl'
-      split_path: 'datasplits/c1.csv'
+      garment_dict_file: 'garments_dict.pkl'
+      split_path: 'datasplits/c3.csv'
       lookup_steps: 5
       pinned_verts: True
       random_betas: True

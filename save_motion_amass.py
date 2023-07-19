@@ -4,8 +4,7 @@ import pickle as pkl
 import smplx
 from scipy.spatial.transform import Rotation as R
 from utils.pose_sequence import PoseSequence, slerp, quat_to_axis_angle
-from utils.show import writePC2
-
+from utils.mesh_io import writePC2
 
 input_motion_path = "/root/data/AMASS/MPI_mosh/00046/stretches_poses.npz"
 out_dir = "/root/data/hood_data/vto_dataset/smpl_parameters"

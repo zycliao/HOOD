@@ -67,23 +67,14 @@ if __name__ == '__main__':
     sequence = move2device(sequence, 'cuda:0')
     # sequence = add_field_to_pyg_batch(sequence, 'iter', [0], 'cloth', reference_key=None)
 
-    material_dict_norm = {}
-    material_dict = {}
-    for material_type in material_types:
-
-        if material_type == 'density':
-            material_dict_norm[material_type] = torch.tensor([0.2002], dtype=torch.float32, device='cuda:0',
-                                                             requires_grad=True)
-            material_dict[material_type] = material_dict_norm[material_type]
-        else:
-            material_dict_norm[material_type] = torch.tensor([0.5], dtype=torch.float32, device='cuda:0',
-                                                             requires_grad=True)
+    ext_force = torch.zeros_like(sequence['cloth'].pos[:, 0], device='cuda:0', requires_grad=True)
+    last_force = None
 
     gt_path = Path(DEFAULTS.data_root) / 'temp' / 'tshirt_stretch_simulation_cloth.pc2'
     gt_cloth_seq = read_pc2(gt_path)
 
-    lr = 1e-2
-    optimizer = torch.optim.Adam([material_dict_norm[material_type] for material_type in material_types], lr=lr)
+    lr = 1e-3
+    optimizer = torch.optim.Adam([ext_force], lr=lr)
     n_frames = sequence['obstacle'].pos.shape[1]
     for i_frame in range(n_frames):
         gt_cloth = gt_cloth_seq[i_frame]
@@ -91,21 +82,15 @@ if __name__ == '__main__':
 
         # save the optimization intermediate results
         optim_inter_path = Path(
-            DEFAULTS.data_root) / 'temp' / f'tshirt_stretch_simulation_cloth_optimizing_{i_frame}.pc2'
+            DEFAULTS.data_root) / 'temp' / f'tshirt_stretch_simulation_cloth_optimizing_ext_force_{i_frame}.pc2'
         optim_verts = []
         gt_obj_path = Path(DEFAULTS.data_root) / 'temp' / f'tshirt_stretch_simulation_cloth_gt_{i_frame}.obj'
         trimesh.Trimesh(vertices=gt_cloth.cpu().numpy(), faces=sequence['cloth'].faces_batch.T.cpu().numpy()).export(gt_obj_path)
 
-        for i_iter in range(150):
+        for i_iter in range(70):
             optimizer.zero_grad()
-            for material_type in material_types:
-                if material_type != 'density':
-                    material_dict[material_type] = relative_between_log_denorm(material_config[material_type + '_max'],
-                                                                               material_config[material_type + '_min'],
-                                                                               material_dict_norm[material_type])
 
-
-            trajectories_dict = runner.rollout_material(sequence, material_dict,
+            trajectories_dict = runner.rollout_material(sequence, ext_force=ext_force,
                                                         start_step=i_frame, n_steps=1)
             pred_cloth = trajectories_dict['pred']
             loss = torch.abs(pred_cloth - gt_cloth).mean()
@@ -115,9 +100,7 @@ if __name__ == '__main__':
             optim_verts.append(pred_cloth.detach().cpu().numpy())
 
         writePC2(optim_inter_path, np.stack(optim_verts))
-        print(f"MATERIAL PARAMS: {material_dict_norm}")
-
-
+        last_force = ext_force.detach().clone()
 
     # Save the sequence to disc
     out_path = Path(DEFAULTS.data_root) / 'temp' / f'{save_name}.pkl'

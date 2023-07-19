@@ -1,6 +1,13 @@
+import os
+import struct
+from struct import pack, unpack
+
 import torch
 import numpy as np
+import trimesh
 from pytorch3d.structures import Meshes
+
+from utils.common import pickle_load
 
 
 def trimesh2pytorch3d(mesh, device=None):
@@ -151,3 +158,96 @@ def load_obj_mesh(mesh_file, with_normal=False, with_texture=False):
         return vertices, faces, norms, face_normals
 
     return vertices, faces
+
+
+def writePC2(file, V, float16=False):
+    file = str(file)
+    assert (
+        file.endswith(".pc2") and not float16 or file.endswith(".pc16") and float16
+    ), "File format not consistent with specified input format"
+    if float16:
+        V = V.astype(np.float16)
+    else:
+        V = V.astype(np.float32)
+    with open(file, "wb") as f:
+        # Create the header
+        headerFormat = "<12siiffi"
+        headerStr = pack(
+            headerFormat, b"POINTCACHE2\0", 1, V.shape[1], 0, 1, V.shape[0]
+        )
+        f.write(headerStr)
+        # Write vertices
+        f.write(V.tobytes())
+
+
+def writePC2Frames(file, V, float16=False, overwrite=True):
+    if overwrite and os.path.isfile(file):
+        os.remove(file)
+    assert (
+        file.endswith(".pc2") and not float16 or file.endswith(".pc16") and float16
+    ), "File format not consistent with specified input format"
+    # Read file metadata (dimensions)
+    if os.path.isfile(file):
+        if float16:
+            V = V.astype(np.float16)
+        else:
+            V = V.astype(np.float32)
+        with open(file, "rb+") as f:
+            # Num points
+            f.seek(16)
+            nPoints = unpack("<i", f.read(4))[0]
+            assert len(V.shape) == 3 and V.shape[1] == nPoints, (
+                "Inconsistent dimensions: "
+                + str(V.shape)
+                + " and should be (-1,"
+                + str(nPoints)
+                + ",3)"
+            )
+            # Read n. of samples
+            f.seek(28)
+            nSamples = unpack("<i", f.read(4))[0]
+            # Update n. of samples
+            nSamples += V.shape[0]
+            f.seek(28)
+            f.write(pack("i", nSamples))
+            # Append new frame/s
+            f.seek(0, 2)
+            f.write(V.tobytes())
+    else:
+        writePC2(file, V, float16)
+
+
+def read_pc2(path):
+    with open(path, 'rb') as f:
+        head_fmt = '<12siiffi'
+        data_fmt = '<fff'
+        head_unpack = struct.Struct(head_fmt).unpack_from
+        data_unpack = struct.Struct(data_fmt).unpack_from
+        data_size = struct.calcsize(data_fmt)
+        headerStr = f.read(struct.calcsize(head_fmt))
+        head = head_unpack(headerStr)
+        nverts, nframes = head[2], head[5]
+        data = []
+        for i in range(nverts*nframes):
+            data_line = f.read(data_size)
+            if len(data_line) != data_size:
+                return None
+            data.append(list(data_unpack(data_line)))
+        data = np.array(data).reshape([nframes, nverts, 3])
+    return data
+
+
+def save_as_pc2(sequence_path, save_dir, prefix='', save_mesh=False):
+    traj_dict = pickle_load(sequence_path)
+    cloth_pos = traj_dict['pred']
+    cloth_faces = traj_dict['cloth_faces']
+    body_pos = traj_dict['obstacle']
+    body_faces = traj_dict['obstacle_faces']
+    if prefix != '':
+        prefix += '_'
+    writePC2(os.path.join(save_dir, prefix + 'cloth.pc2'), cloth_pos)
+    writePC2(os.path.join(save_dir, prefix + 'body.pc2'), body_pos)
+
+    if save_mesh:
+        trimesh.Trimesh(vertices=cloth_pos[0], faces=cloth_faces, process=False).export(os.path.join(save_dir, prefix + 'cloth.obj'))
+        trimesh.Trimesh(vertices=body_pos[0], faces=body_faces, process=False).export(os.path.join(save_dir, prefix + 'body.obj'))

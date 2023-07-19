@@ -395,7 +395,7 @@ class Model(nn.Module):
 
         return sample
 
-    def get_position(self, sample, is_training):
+    def get_position(self, sample, is_training, ext_force=None):
         """
         Unnormalize model's outputs to get accelerations for each garment node.
         Then, integrate the garment geometry forward in time to get the next position.
@@ -408,7 +408,10 @@ class Model(nn.Module):
 
         # get predicted accelerations
         cloth_features = sample['cloth'].node_features
-        acceleration = self._output_normalizer.inverse(cloth_features)
+        if ext_force is not None:
+            acceleration = self._output_normalizer.inverse(cloth_features) + ext_force
+        else:
+            acceleration = self._output_normalizer.inverse(cloth_features)
 
         # add predicted accelerations to the sample
         sample = add_field_to_pyg_batch(sample, 'pred_acceleration', acceleration, 'cloth', 'pos')
@@ -436,7 +439,7 @@ class Model(nn.Module):
         sample = add_field_to_pyg_batch(sample, 'target_acceleration', target_acceleration_norm, 'cloth', 'pos')
         return sample
 
-    def forward(self, sample, is_training=True):
+    def forward(self, sample, is_training=True, ext_force=None):
         """
         Forward pass. Predicts axxelerations for each garment node and computes their posiions in the next frame.
 
@@ -486,5 +489,5 @@ class Model(nn.Module):
         """
         sample = self.prepare_inputs(sample, is_training=is_training)
         sample = self._learned_model(sample)
-        sample = self.get_position(sample, is_training=is_training)
+        sample = self.get_position(sample, is_training=is_training, ext_force=ext_force)
         return sample

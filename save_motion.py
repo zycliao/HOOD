@@ -1,7 +1,8 @@
 import os
 import numpy as np
 import pickle as pkl
-from utils.show import writePC2
+from utils.mesh_io import writePC2
+
 
 def smooth_iter(x, alpha=0.01):
     # padding

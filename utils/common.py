@@ -330,6 +330,30 @@ def relative_between_log(fr, to, value: torch.Tensor):
     return value_norm
 
 
+def relative_between_log_denorm(fr, to, value: torch.Tensor):
+    """
+    De-normalize a tensor with values between the range [0,1] to the range [fr, to] using a exp scale.
+    :param fr: minimum value
+    :param to: maximum value
+    :param value: tensor to de-normalize
+    :return: de-normalized tensor
+    """
+    if fr == to:
+        return torch.ones_like(value) * fr
+
+    fr_log = math.log(fr)
+    to_log = math.log(to)
+
+    value_log = value * (to_log - fr_log)
+    value_log = fr_log + value_log
+
+    if type(value) == torch.Tensor:
+        value = torch.exp(value_log)
+    else:
+        value = math.exp(value_log)
+    return value
+
+
 from scipy.spatial.transform import Rotation as R
 
 

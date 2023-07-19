@@ -221,7 +221,7 @@ class Material():
         self.bending_multiplier = bending_multiplier
 
         self.bending_coeff = bending_coeff
-        self.bending_coeff *= bending_multiplier
+        self.bending_coeff = bending_multiplier * bending_coeff
 
         # Lamé coefficients
         self.lame_mu = lame_mu

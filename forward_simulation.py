@@ -10,24 +10,31 @@ from pathlib import Path
 # Set material paramenters, see configs/cvpr.yaml for the training ranges for each parameter
 config_dict = dict()
 config_dict['density'] = 0.20022
-config_dict['lame_mu'] = 23600.0
-config_dict['lame_lambda'] = 44400
-config_dict['bending_coeff'] = 3.962e-05
+# # target material
+# config_dict['lame_mu'] = 23600.0
+# config_dict['lame_lambda'] = 44400
+# config_dict['bending_coeff'] = 3.962e-05
+
+# init material
+config_dict['lame_mu'] = 31818.0273
+config_dict['lame_lambda'] = 18165.1719
+config_dict['bending_coeff'] = 9.1493e-06
 
 # config_dict['lame_mu'] = 50000
 # config_dict['lame_lambda'] = 66400
 # config_dict['bending_coeff'] = 1e-7
 
-garment_name = 'tshirt'
-save_name = 'tshirt_stretch_simulation'
+garment_name = 'dress'
+save_name = 'pbs_init_material'
+save_dir = "/root/data/cloth_recon/c3/hood_results"
 
 # If True, the SMPL poses are slightly modified to avoid hand-body self-penetrations. The technique is adopted from the code of SNUG
 config_dict['separate_arms'] = False
+config_dict['keep_length'] = True
 # Paths to SMPL model and garments_dict file relative to $HOOD_DATA/aux_data
 config_dict['garment_dict_file'] = 'garments_dict.pkl'
 config_dict['smpl_model'] = 'smpl/SMPL_NEUTRAL.pkl'
 config_dict['collision_eps'] = 4e-3
-config_dict['keep_length'] = True
 validation_config = ValidationConfig(**config_dict)
 
 config_name = 'postcvpr'
@@ -57,7 +64,9 @@ out_path = Path(DEFAULTS.data_root) / 'temp' / f'{save_name}.pkl'
 print(f"Rollout saved into {out_path}")
 pickle_dump(dict(trajectories_dict), out_path)
 
-from utils.show import write_video, save_as_pc2
+from utils.show import write_video
+from utils.mesh_io import save_as_pc2
+
 # from aitviewer.headless import HeadlessRenderer
 
-save_as_pc2(out_path, Path(DEFAULTS.data_root) / 'temp', save_mesh=True, prefix=save_name)
+save_as_pc2(out_path, save_dir, save_mesh=True, prefix=save_name)
