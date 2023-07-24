@@ -180,9 +180,7 @@ def writePC2(file, V, float16=False):
         f.write(V.tobytes())
 
 
-def writePC2Frames(file, V, float16=False, overwrite=True):
-    if overwrite and os.path.isfile(file):
-        os.remove(file)
+def writePC2Frames(file, V, float16=False):
     assert (
         file.endswith(".pc2") and not float16 or file.endswith(".pc16") and float16
     ), "File format not consistent with specified input format"

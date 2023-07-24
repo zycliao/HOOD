@@ -76,6 +76,7 @@ if __name__ == '__main__':
     lr = 1e-3
     optimizer = torch.optim.Adam([ext_force], lr=lr)
     n_frames = sequence['obstacle'].pos.shape[1]
+    prev_out_dict = None
     for i_frame in range(n_frames):
         gt_cloth = gt_cloth_seq[i_frame]
         gt_cloth = torch.tensor(gt_cloth, dtype=torch.float32, device='cuda:0')
@@ -90,7 +91,7 @@ if __name__ == '__main__':
         for i_iter in range(70):
             optimizer.zero_grad()
 
-            trajectories_dict = runner.rollout_material(sequence, ext_force=ext_force,
+            trajectories_dict, prev_out_dict_ = runner.rollout_material(sequence, prev_out_dict, ext_force=ext_force,
                                                         start_step=i_frame, n_steps=1)
             pred_cloth = trajectories_dict['pred']
             loss = torch.abs(pred_cloth - gt_cloth).mean()
@@ -101,6 +102,7 @@ if __name__ == '__main__':
 
         writePC2(optim_inter_path, np.stack(optim_verts))
         last_force = ext_force.detach().clone()
+        prev_out_dict = prev_out_dict_
 
     # Save the sequence to disc
     out_path = Path(DEFAULTS.data_root) / 'temp' / f'{save_name}.pkl'

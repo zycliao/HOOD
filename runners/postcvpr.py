@@ -90,7 +90,7 @@ class Runner(nn.Module):
             wandb.login()
             self.wandb_run = wandb.init(project='HOOD')
 
-    def rollout_material(self, sequence, material_dict=None, start_step=0, n_steps=-1, bare=False, record_time=False,
+    def rollout_material(self, sequence, prev_out_dict=None, material_dict=None, start_step=0, n_steps=-1, bare=False, record_time=False,
                          ext_force=None):
         """
         Generates a trajectory for the full sequence, use this function for inference
@@ -127,7 +127,6 @@ class Runner(nn.Module):
 
         metrics_dict = defaultdict(list)
 
-        prev_out_dict = None
         for i in range(start_step, start_step+n_samples):
             state = self.collect_sample_wholeseq(sequence, i, prev_out_dict, material_dict=material_dict)
             state = self.model(state, is_training=False, ext_force=ext_force)
@@ -155,7 +154,7 @@ class Runner(nn.Module):
         for s in ['obstacle']:
             trajectories_dicts[s] = np.stack(trajectories_dicts[s], axis=0)
         trajectories_dicts['pred'] = trajectories_dicts['pred'][0]
-        return trajectories_dicts
+        return trajectories_dicts, prev_out_dict
 
     def forward_simulation(self, sequence, material_dict=None, start_step=0, n_steps=-1, bare=False, record_time=False):
         """
