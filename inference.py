@@ -23,7 +23,7 @@ config_dict['bending_coeff'] = 3.962e-05
 # config_dict['lame_lambda'] = 66400
 # config_dict['bending_coeff'] = 1e-7
 
-save_name = 'finetuned_gt_material'
+save_name = 'fix_mat'
 save_dir = "/root/data/cloth_recon/c3/hood_results"
 garment_name = 'dress'
 os.makedirs(save_dir, exist_ok=True)
@@ -37,9 +37,9 @@ config_dict['garment_dict_file'] = 'garments_dict.pkl'
 config_dict['smpl_model'] = 'smpl/SMPL_NEUTRAL.pkl'
 validation_config = ValidationConfig(**config_dict)
 
-config_name = 'postcvpr'
-checkpoint_path = Path(DEFAULTS.data_root) / 'trained_models' / 'postcvpr.pth'
-# checkpoint_path = Path(DEFAULTS.data_root) / 'experiments' / '20230704_142428' / 'checkpoints' / 'step_0000012000.pth'
+config_name = 'postcvpr_fix_mat'
+# checkpoint_path = Path(DEFAULTS.data_root) / 'trained_models' / 'postcvpr.pth'
+checkpoint_path = Path(DEFAULTS.data_root) / 'experiments' / '20230728_092347' / 'checkpoints' / 'step_0000150000.pth'
 
 # load the config from .yaml file and load .py modules specified there
 modules, experiment_config = load_params(config_name)
@@ -52,18 +52,18 @@ runner_module, runner = load_runner_from_checkpoint(checkpoint_path, modules, ex
 
 # file with the pose sequence
 # sequence_path =  Path(HOOD_DATA) / 'temp/01_01.pkl'
-sequence_path = Path(DEFAULTS.data_root) / 'smpl_parameters' / 'stretch.pkl'
+sequence_path = Path(DEFAULTS.vto_root) / 'smpl_parameters' / 'stretch.pkl'
 
 
 dataloader = create_one_sequence_dataloader(sequence_path, garment_name, modules, experiment_config)
 sequence = next(iter(dataloader))
 sequence = move2device(sequence, 'cuda:0')
 trajectories_dict = runner.valid_rollout(sequence,  bare=True)
-# # Save the sequence to disc
-# out_path = Path(DEFAULTS.data_root) / 'temp' / f'{save_name}.pkl'
-# print(f"Rollout saved into {out_path}")
-# pickle_dump(dict(trajectories_dict), out_path)
-#
-# from utils.mesh_io import save_as_pc2
-#
-# save_as_pc2(out_path, save_dir, save_mesh=True, prefix=save_name)
+# Save the sequence to disc
+out_path = Path(DEFAULTS.data_root) / 'temp' / f'{save_name}.pkl'
+print(f"Rollout saved into {out_path}")
+pickle_dump(dict(trajectories_dict), out_path)
+
+from utils.mesh_io import save_as_pc2
+
+save_as_pc2(out_path, save_dir, save_mesh=True, prefix=save_name)

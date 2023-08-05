@@ -192,7 +192,7 @@ if __name__ == '__main__':
     Ks = torch.stack(Ks, 0)
 
     cameras = FoVPerspectiveCameras(device=device, R=Rs, T=Ts, K=Ks)
-    sigma = 1e-4
+    sigma = 1e-5
     raster_settings = RasterizationSettings(image_size=img_size[0], blur_radius=np.log(1. / sigma - 1.) * sigma,
                                             faces_per_pixel=25)
     renderer_silhouette = MeshRenderer(rasterizer=MeshRasterizer(

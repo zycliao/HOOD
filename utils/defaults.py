@@ -7,8 +7,12 @@ hostname = socket.gethostname()
 
 # HOOD_PROJECT = os.environ["HOOD_PROJECT"]
 # HOOD_DATA = os.environ["HOOD_DATA"]
-HOOD_PROJECT = "/mnt/c/project/HOOD"
-HOOD_DATA = "/mnt/c/data/hood_data"
+if hostname == 'rsm-gamma':
+    HOOD_PROJECT = "/home/zhouyingchengliao/project/HOOD"
+    HOOD_DATA  = "/data2/zycliao/hood_data"
+else:
+    HOOD_PROJECT = "/mnt/c/project/HOOD"
+    HOOD_DATA = "/mnt/c/data/hood_data"
 
 DEFAULTS = dict()
 
