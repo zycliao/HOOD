@@ -26,7 +26,7 @@ dataloader:
   pyg_data: True
   dataset:
     postcvpr:
-      data_root: 'smpl_parameters'
+      data_root: 'vto_dataset/smpl_parameters'
       smpl_model: 'smpl/SMPL_NEUTRAL.pkl'
       garment_dict_file: 'garments_dict.pkl'
       split_path: 'datasplits/train.csv'

@@ -5,39 +5,43 @@ experiment:
   checkpoint_path: '/root/data/hood_data/trained_models/postcvpr.pth'
 
 runner:
-  postcvpr:
+  postcvpr_supervise:
     warmup_steps: 100
     optimizer:
       lr: 5e-5
       decay_steps: 50_000
       decay_rate: 5e-1
     material:
-      lame_mu_min: 15909
-      lame_mu_max: 63636
-      lame_lambda_min: 3535.414406069427
-      lame_lambda_max: 93333.73508005822
-      bending_coeff_min: 6.370782056371576e-08
-      bending_coeff_max: 0.0013139737991266374
-      density_min: 4.34e-2
-      density_max: 7e-1
+      lame_mu_min: 23600.0
+      lame_mu_max: 23600.0
+      lame_lambda_min: 44400.0
+      lame_lambda_max: 44400.0
+      bending_coeff_min: 3.962e-05
+      bending_coeff_max: 3.962e-05
+      density_min: 0.20022
+      density_max: 0.20022
 
 dataloader:
   num_workers: 8
   batch_size: 1
   pyg_data: True
   dataset:
-    postcvpr:
+    postcvpr_supervise:
       data_root: 'vto_dataset/smpl_parameters'
       smpl_model: 'smpl/SMPL_NEUTRAL.pkl'
       garment_dict_file: 'garments_dict.pkl'
       split_path: 'datasplits/c3.csv'
       lookup_steps: 5
       pinned_verts: True
-      random_betas: True
-      betas_scale: 3.
+      random_betas: False
+      betas_scale: 1.
       n_coarse_levels: 3
+      garment_name: 'dress'
+      gt_seq_path: '/mnt/c/data/cloth_recon/c3/sequence_cloth.pc2'
 
 criterions:
+  postcvpr.supervise:
+    weight: 0.01
   postcvpr.mataug.stretching_energy:
   postcvpr.inertia:
   postcvpr.gravitational_energy:

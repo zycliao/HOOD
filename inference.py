@@ -23,7 +23,7 @@ config_dict['bending_coeff'] = 3.962e-05
 # config_dict['lame_lambda'] = 66400
 # config_dict['bending_coeff'] = 1e-7
 
-save_name = 'fix_mat'
+save_name = 'supervise'
 save_dir = "/root/data/cloth_recon/c3/hood_results"
 garment_name = 'dress'
 os.makedirs(save_dir, exist_ok=True)
@@ -37,9 +37,10 @@ config_dict['garment_dict_file'] = 'garments_dict.pkl'
 config_dict['smpl_model'] = 'smpl/SMPL_NEUTRAL.pkl'
 validation_config = ValidationConfig(**config_dict)
 
-config_name = 'postcvpr_fix_mat'
+config_name = 'c3_supervise'
 # checkpoint_path = Path(DEFAULTS.data_root) / 'trained_models' / 'postcvpr.pth'
-checkpoint_path = Path(DEFAULTS.data_root) / 'experiments' / '20230728_092347' / 'checkpoints' / 'step_0000150000.pth'
+# checkpoint_path = Path(DEFAULTS.data_root) / 'experiments' / '20230728_092347' / 'checkpoints' / 'step_0000150000.pth'
+checkpoint_path = Path(DEFAULTS.data_root) / 'experiments' / 'c3_supervise_20230806_110042' / 'checkpoints' / 'step_0000008000.pth'
 
 # load the config from .yaml file and load .py modules specified there
 modules, experiment_config = load_params(config_name)

@@ -11,6 +11,7 @@ out_dir = "/root/data/hood_data/vto_dataset/smpl_parameters"
 save_name = "stretch"
 target_fps = 30
 transition_time = 1
+total_num_frames = 300
 save_mesh = True
 
 os.makedirs(out_dir, exist_ok=True)
@@ -43,6 +44,10 @@ for i in range(len(global_orient)):
     new_body_pose.append(quat_to_axis_angle(body_pose[i]).reshape([-1]))
 body_pose = np.stack(new_body_pose, axis=0)
 global_orient = np.stack(new_global_orient, axis=0)
+
+transl = transl[:total_num_frames]
+body_pose = body_pose[:total_num_frames]
+global_orient = global_orient[:total_num_frames]
 
 out_dict = dict()
 out_dict['transl'] = transl

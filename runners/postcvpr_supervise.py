@@ -426,18 +426,22 @@ class Runner(nn.Module):
 
         # copy positions from the lookup steps
         if idx != 0:
-            sample_step = self.sample_collector.lookup2target(sample_step, idx - 1)
+            # Zhou: seems in the original implementation, when actual index is idx - 1,
+            # which means, the animation freezes when idx = 1 (the second frame)
 
-        # in the first step, the obstacle and positions of the pinned vertices are static
-        if idx == 0:
-            is_init = np.random.rand() > 0.5
-            sample_step = self.sample_collector.pos2target(sample_step)
-            if is_init or not random_ts:
-                sample_step = self.sample_collector.pos2prev(sample_step)
-                ts = self.mcfg.initial_ts
-        # for the second frame, we set velocity to zero
-        elif idx == 1:
-            sample_step = self.sample_collector.pos2prev(sample_step)
+            # sample_step = self.sample_collector.lookup2target(sample_step, idx - 1)
+            sample_step = self.sample_collector.lookup2target(sample_step, idx)
+
+        # # in the first step, the obstacle and positions of the pinned vertices are static
+        # if idx == 0:
+        #     is_init = np.random.rand() > 0.5
+        #     sample_step = self.sample_collector.pos2target(sample_step)
+        #     if is_init or not random_ts:
+        #         sample_step = self.sample_collector.pos2prev(sample_step)
+        #         ts = self.mcfg.initial_ts
+        # # for the second frame, we set velocity to zero
+        # elif idx == 1:
+        #     sample_step = self.sample_collector.pos2prev(sample_step)
 
         sample_step = self.sample_collector.add_velocity(sample_step, prev_out_dict)
         sample_step = self.sample_collector.add_timestep(sample_step, ts)
@@ -468,8 +472,8 @@ class Runner(nn.Module):
         for i in range(roll_steps):
             sample_step = self.collect_sample(sample, i, prev_out_sample, random_ts=random_ts)
 
-            if i == 0:
-                sample_step = self.collision_solver.solve(sample_step)
+            # if i == 0:
+            #     sample_step = self.collision_solver.solve(sample_step)
 
             sample_step = self.model(sample_step)
             loss_dict = self.criterion_pass(sample_step)
