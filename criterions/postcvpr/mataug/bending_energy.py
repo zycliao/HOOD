@@ -55,15 +55,23 @@ class Criterion(nn.Module):
 
         energy = bending_coeff * scale * (theta ** 2) / 2
         loss = energy.sum()
-        return loss
+
+        per_vert = torch.zeros_like(pred_pos[:, :2])
+        per_vert.scatter_add_(0, f_connectivity_edges,  energy[:, None].repeat(1, 2))
+        per_vert = torch.mean(per_vert, 1)
+
+        return loss, per_vert
 
     def forward(self, sample):
         loss_list = []
+        per_vert_list = []
         B = sample.num_graphs
         for i in range(B):
-            loss_sample = self.calc_single(sample.get_example(i))
+            loss_sample, per_vert_sample = self.calc_single(sample.get_example(i))
             loss_list.append(loss_sample)
+            per_vert_list.append(per_vert_sample)
 
         loss = sum(loss_list) / B
+        per_vert = sum(per_vert_list) / B
 
-        return dict(loss=loss)
+        return dict(loss=loss, per_vert=per_vert)

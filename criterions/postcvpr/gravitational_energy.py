@@ -32,4 +32,4 @@ class Criterion(nn.Module):
 
         loss = U.sum() / B
 
-        return dict(loss=loss)
+        return dict(loss=loss, per_vert=U)

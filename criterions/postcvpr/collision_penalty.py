@@ -73,7 +73,7 @@ class Criterion(nn.Module):
         interpenetration = interpenetration.pow(3)
         loss = interpenetration.sum(-1)
 
-        return loss
+        return loss, interpenetration
 
     def forward(self, sample):
         B = sample.num_graphs
@@ -81,10 +81,13 @@ class Criterion(nn.Module):
         weight = self.get_weight(iter_num)
 
         loss_list = []
+        per_vert_list = []
         for i in range(B):
-            loss_list.append(
-                self.calc_loss(sample.get_example(i)))
+            loss_, per_vert_ = self.calc_loss(sample.get_example(i))
+            loss_list.append(loss_)
+            per_vert_list.append(per_vert_)
 
         loss = sum(loss_list) / B * weight
+        per_vert = sum(per_vert_list) / B * weight
 
-        return dict(loss=loss)
+        return dict(loss=loss, per_vert=per_vert)

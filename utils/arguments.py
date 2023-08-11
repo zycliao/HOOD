@@ -87,6 +87,8 @@ def load_params(config_name: str=None, config_dir: str=None):
         config_dir = Path(DEFAULTS.project_dir) / 'configs'
 
     # Load default config from MainConfig and merge in cli parameters
+
+    OmegaConf.register_new_resolver("PH_DATA_ROOT", lambda x: DEFAULTS.data_root + x)
     conf = OmegaConf.structured(MainConfig)
     struct_fix(conf)
     if config_name is None:

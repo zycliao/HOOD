@@ -112,4 +112,4 @@ class Criterion(nn.Module):
         loss = friction.sum(-1).mean() * self.weight
         loss = loss / B
 
-        return dict(loss=loss)
+        return dict(loss=loss, per_vert=friction * self.weight / B)

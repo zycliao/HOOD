@@ -81,4 +81,9 @@ class Criterion(nn.Module):
         energy = f_area * self.thickness * energy_density
         loss = energy.sum() / B
 
-        return dict(loss=loss)
+        per_vert = torch.zeros_like(sample['cloth'].pred_pos)
+        per_vert.scatter_add_(0, f, energy[:, None].repeat(1, 3))
+        per_vert = torch.mean(per_vert, 1)
+
+
+        return dict(loss=loss, per_vert=per_vert)

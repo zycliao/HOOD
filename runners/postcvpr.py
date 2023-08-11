@@ -135,7 +135,7 @@ class Runner(nn.Module):
             obstacle_trajectory.append(state['obstacle'].target_pos.detach().cpu().numpy())
 
             if not bare:
-                loss_dict = self.criterion_pass(state)
+                loss_dict, _ = self.criterion_pass(state)
                 for k, v in loss_dict.items():
                     metrics_dict[k].append(v.item())
             prev_out_dict = state.clone()
@@ -222,7 +222,7 @@ class Runner(nn.Module):
                 else:
                     state['cloth'].pred_pos = pred_pos
 
-                loss_dict = self.criterion_pass(state)
+                loss_dict, _ = self.criterion_pass(state)
                 loss = 0
                 for k, v in loss_dict.items():
                     loss += v
@@ -332,7 +332,7 @@ class Runner(nn.Module):
             obstacle_trajectory.append(state['obstacle'].target_pos.detach().cpu().numpy())
 
             if not bare:
-                loss_dict = self.criterion_pass(state)
+                loss_dict, _ = self.criterion_pass(state)
                 for k, v in loss_dict.items():
                     metrics_dict[k].append(v.item())
             prev_out_dict = state.clone()
@@ -398,12 +398,16 @@ class Runner(nn.Module):
         """
         sample_step.cloth_obj = self.cloth_obj
         loss_dict = dict()
+        per_vert_dict = dict()
         for criterion_name, criterion in self.criterion_dict.items():
             ld = criterion(sample_step)
             for k, v in ld.items():
-                loss_dict[f"{criterion_name}_{k}"] = v
+                if k == 'per_vert':
+                    per_vert_dict[f"{criterion_name}_{k}"] = v
+                elif k == 'loss':
+                    loss_dict[f"{criterion_name}_{k}"] = v
 
-        return loss_dict
+        return loss_dict, per_vert_dict
 
     def collect_sample(self, sample, idx, prev_out_dict=None, random_ts=False):
         """
@@ -472,7 +476,7 @@ class Runner(nn.Module):
                 sample_step = self.collision_solver.solve(sample_step)
 
             sample_step = self.model(sample_step)
-            loss_dict = self.criterion_pass(sample_step)
+            loss_dict, _ = self.criterion_pass(sample_step)
             prev_out_sample = sample_step.detach()
 
             self.optimizer_step(loss_dict, optimizer, scheduler)

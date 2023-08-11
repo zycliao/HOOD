@@ -70,7 +70,7 @@ def calc_metrics_by_seq(seq_path, sample, runner, rest_pos, device='cuda:0', to_
         sample['cloth'].pred_pos.requires_grad = True
 
         # compute metrics
-        loss_dict = runner.criterion_pass(sample)
+        loss_dict, _ = runner.criterion_pass(sample)
 
         # compute total loss
         total_val = sum(v for k, v in loss_dict.items() if 'loss' in k)

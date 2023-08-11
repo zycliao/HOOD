@@ -34,9 +34,9 @@ class Criterion(nn.Module):
         x_diff = pred_pos - x_hat
         num = (x_diff * mass * x_diff).sum(dim=-1).unsqueeze(1)
         den = 2 * timestep[None, ..., 0] ** 2
-        loss = num / den
+        energy = num / den
 
-        loss = loss.sum() / B
+        loss = energy.sum() / B
 
         # print('loss', loss)
-        return dict(loss=loss)
+        return dict(loss=loss, per_vert=energy.sum(dim=1))
