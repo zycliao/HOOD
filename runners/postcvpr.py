@@ -156,7 +156,8 @@ class Runner(nn.Module):
         trajectories_dicts['pred'] = trajectories_dicts['pred'][0]
         return trajectories_dicts, prev_out_dict
 
-    def forward_simulation(self, sequence, material_dict=None, start_step=0, n_steps=-1, bare=False, record_time=False):
+    def forward_simulation(self, sequence, material_dict=None, start_step=0, n_steps=-1, init_cloth_pos=None,
+                           bare=False, record_time=False):
         """
         Generates a trajectory for the full sequence, use this function for inference
 
@@ -197,7 +198,10 @@ class Runner(nn.Module):
         if progressbar:
             pbar = tqdm(pbar)
 
-        pred_pos_init = sequence['cloth'].pos[:, 0].clone().detach()
+        if init_cloth_pos is not None:
+            pred_pos_init = init_cloth_pos
+        else:
+            pred_pos_init = sequence['cloth'].pos[:, 0].clone().detach()
 
         prev_out_dict = None
         for i in pbar:
@@ -207,34 +211,43 @@ class Runner(nn.Module):
 
             with torch.no_grad():
                 if i > 0:
-                    sequence._slice_dict['cloth'].pop('pred_pos')
-                    sequence._slice_dict['cloth'].pop('pred_velocity')
-                    sequence._inc_dict['cloth'].pop('pred_pos')
-                    sequence._inc_dict['cloth'].pop('pred_velocity')
+                    if 'pred_pos' in sequence._slice_dict['cloth']:
+                        sequence._slice_dict['cloth'].pop('pred_pos')
+                    if 'pred_velocity' in sequence._slice_dict['cloth']:
+                        sequence._slice_dict['cloth'].pop('pred_velocity')
+                    if 'pred_pos' in sequence._inc_dict['cloth']:
+                        sequence._inc_dict['cloth'].pop('pred_pos')
+                    if 'pred_velocity' in sequence._inc_dict['cloth']:
+                        sequence._inc_dict['cloth'].pop('pred_velocity')
                 state = self.collect_sample_wholeseq(sequence, i, prev_out_dict)
 
             min_loss = np.inf
             min_iter = -1
-            for i_iter in range(400):
+            for i_iter in range(1000):
                 optimizer.zero_grad()
                 if i_iter == 0:
                     state = add_field_to_pyg_batch(state, 'pred_pos', pred_pos, 'cloth', 'pos')
                 else:
                     state['cloth'].pred_pos = pred_pos
 
-                loss_dict, _ = self.criterion_pass(state)
+                loss_dict, per_vert_dict = self.criterion_pass(state)
                 loss = 0
+                print_info = f"Iter {i_iter}, "
                 for k, v in loss_dict.items():
                     loss += v
+                    print_info += f"{k}: {v.item():.5f}, "
                 loss.backward()
                 optimizer.step()
+
+                if i_iter % 50 == 0:
+                    print(print_info)
 
                 loss_val = loss.detach().cpu().item()
                 # print(f'iter {i_iter}, loss {loss_val}')
                 if loss_val < min_loss:
                     min_loss = loss_val
                     min_iter = i_iter
-                if i_iter - min_iter > 10:
+                if i_iter - min_iter > 30:
                     break
 
             with torch.no_grad():
@@ -243,8 +256,15 @@ class Runner(nn.Module):
                 pred_pos_init = 2 * pred_pos - state['cloth'].pos
                 state = add_field_to_pyg_batch(state, 'pred_velocity', pred_velocity, 'cloth', 'pos')
 
+                if i < start_step + n_samples - 1:
+                    sequence['cloth'].pos[:, i + 1] = pred_pos
+
                 trajectory.append(state['cloth'].pred_pos.detach().cpu().numpy())
                 obstacle_trajectory.append(state['obstacle'].target_pos.detach().cpu().numpy())
+                for k, v in loss_dict.items():
+                    metrics_dict[k].append(v.item())
+                for k, v in per_vert_dict.items():
+                    metrics_dict[k].append(v.detach().cpu().numpy())
 
                 prev_out_dict = state.clone()
 
@@ -332,9 +352,11 @@ class Runner(nn.Module):
             obstacle_trajectory.append(state['obstacle'].target_pos.detach().cpu().numpy())
 
             if not bare:
-                loss_dict, _ = self.criterion_pass(state)
+                loss_dict, per_vert_dict = self.criterion_pass(state)
                 for k, v in loss_dict.items():
                     metrics_dict[k].append(v.item())
+                for k, v in per_vert_dict.items():
+                    metrics_dict[k].append(v.detach().cpu().numpy())
             prev_out_dict = state.clone()
         return trajectory, obstacle_trajectory, metrics_dict
 

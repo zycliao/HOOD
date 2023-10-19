@@ -31,6 +31,8 @@ class Config:
     restpos_scale: Optional[float] = None   # if set, scales canonical geometries of garments by that value
     zero_betas: bool = False                # Whether to set the beta parameters to zero
 
+    invert_y: bool = False                 # Whether to invert the y-axis in gravity direction
+
 
 
 
@@ -89,6 +91,8 @@ def update_config_for_validation(experiment_config: DictConfig, validation_confi
         experiment_config.dataloader.dataset[dataset_name].zero_betas = validation_config.zero_betas
     if validation_config.collision_eps is not None:
         experiment_config.criterions[criterion_name+'.collision_penalty'].eps = validation_config.collision_eps
+    if validation_config.invert_y:
+        experiment_config.criterions['postcvpr.gravitational_energy'].g *= -1
     experiment_config.dataloader.batch_size = 1
     experiment_config.dataloader.num_workers = 0
     experiment_config.dataloader.dataset[dataset_name].wholeseq = True

@@ -4,6 +4,7 @@ import pickle
 import networkx as nx
 import numpy as np
 import smplx
+import torch
 from sklearn import neighbors
 from tqdm import tqdm
 
@@ -69,7 +70,7 @@ def sample_skinningweights(points, smpl_tree, sigmas, smpl_model):
     return garment_shapedirs, garment_posedirs, garment_lbs_weights
 
 
-def make_lbs_dict(obj_file, smpl_file, n_samples=0):
+def make_lbs_dict(obj_file, smpl_file, n_samples=0, smplx_v_rest_pose=None):
     """
     Collect linear blend skinning weights for a garment mesh
     :param obj_file:
@@ -79,7 +80,8 @@ def make_lbs_dict(obj_file, smpl_file, n_samples=0):
     """
 
     smpl_model = smplx.SMPL(smpl_file)
-    smplx_v_rest_pose = smpl_model().vertices[0].detach().cpu().numpy()
+    if smplx_v_rest_pose is None:
+        smplx_v_rest_pose = smpl_model().vertices[0].detach().cpu().numpy()
 
     garment_template, garment_faces = load_obj(obj_file, tex_coords=False)
 
@@ -152,7 +154,7 @@ def add_coarse_edges(garment_dict, n_levels=4):
     return garment_dict
 
 
-def make_garment_dict(obj_file, smpl_file, coarse=True, n_coarse_levels=4, training=True, n_samples_lbs=0):
+def make_garment_dict(obj_file, smpl_file, coarse=True, n_coarse_levels=4, training=True, n_samples_lbs=0, smplx_v_rest_pose=None, smpl_params=None):
     """
     Create a dictionary for a garment from an obj file
     """
@@ -160,8 +162,43 @@ def make_garment_dict(obj_file, smpl_file, coarse=True, n_coarse_levels=4, train
     garment_dict = make_restpos_dict(obj_file)
 
     if training:
-        lbs = make_lbs_dict(obj_file, smpl_file, n_samples=n_samples_lbs)
+        lbs = make_lbs_dict(obj_file, smpl_file, n_samples=n_samples_lbs, smplx_v_rest_pose=smplx_v_rest_pose)
         garment_dict['lbs'] = lbs
+
+    if smpl_params is not None:
+        from utils.garment_smpl import GarmentSMPL
+        smpl_params['full_pose'] = torch.cat([smpl_params['global_orient'], smpl_params['body_pose']], dim=1)
+        rest_verts = torch.tensor(np.zeros_like(garment_dict['rest_pos']), dtype=torch.float32, requires_grad=True)
+        target_verts = torch.tensor(garment_dict['rest_pos'], dtype=torch.float32)
+        optimizer = torch.optim.Adam([rest_verts], lr=0.003)
+        smpl_model = smplx.SMPL(smpl_file)
+        garment_skinning_dict = {}
+        for k, v in garment_dict['lbs'].items():
+            if k == 'f':
+                garment_skinning_dict[k] = torch.tensor(v, dtype=torch.int64)
+            else:
+                garment_skinning_dict[k] = torch.tensor(v, dtype=torch.float32)
+        cloth_smpl_model = GarmentSMPL(smpl_model, garment_skinning_dict)
+        for i in range(300):
+            optimizer.zero_grad()
+            cloth_smpl_model.garment_skinning_dict['v'] = rest_verts
+            verts = cloth_smpl_model.make_vertices(smpl_params['betas'], smpl_params['full_pose'], smpl_params['transl'])[0]
+            loss = torch.mean(torch.abs(verts - target_verts))
+            loss.backward()
+            optimizer.step()
+            print(f"Iter {i}, loss {loss.item()}")
+
+        garment_dict['rest_pos'] = rest_verts.detach().cpu().numpy()
+        garment_dict['lbs']['v'] = rest_verts.detach().cpu().numpy()
+        import trimesh
+        trimesh.Trimesh(vertices=garment_dict['rest_pos'], faces=garment_dict['faces']).export('test.obj')
+        smpl_v = smpl_model().vertices.detach().cpu().numpy()[0]
+        trimesh.Trimesh(vertices=smpl_v, faces=smpl_model.faces).export('smpl.obj')
+
+        posed_smpl_v = smpl_model(global_orient=smpl_params['global_orient'], body_pose=smpl_params['body_pose'],
+                                  betas=smpl_params['betas'], transl=smpl_params['transl']).vertices.detach().cpu().numpy()[0]
+        trimesh.Trimesh(vertices=posed_smpl_v, faces=smpl_model.faces).export('posed_smpl.obj')
+        trimesh.Trimesh(vertices=target_verts.detach().cpu().numpy(), faces=garment_dict['faces']).export('target.obj')
 
     if coarse:
         garment_dict = add_coarse_edges(garment_dict, n_levels=n_coarse_levels)
@@ -170,7 +207,8 @@ def make_garment_dict(obj_file, smpl_file, coarse=True, n_coarse_levels=4, train
 
 
 def add_garment_to_garments_dict(objfile, garments_dict_file, garment_name, smpl_file=None, coarse=True,
-                                 n_coarse_levels=4, training=True, n_samples_lbs=0):
+                                 n_coarse_levels=4, training=True, n_samples_lbs=0, smplx_v_rest_pose=None,
+                                 smpl_params=None):
     """
     Add a new garment from a given obj file to the garments_dict_file
 
@@ -183,13 +221,15 @@ def add_garment_to_garments_dict(objfile, garments_dict_file, garment_name, smpl
     :param training: whether to add the lbs weights (needed to initialize from arbitrary pose)
     :param n_samples_lbs: number of samples to use for the 'diffused' lbs weights [Santesteban et al. 2021]
         use 0 for tight-fitting garments, and 1000 for loose-fitting garments
+    :param smplx_v_rest_pose: a smpl mesh in the rest pose, np.ndarray of shape (6890, 3)
     """
 
     if smpl_file is None:
         smpl_file = os.path.join(DEFAULTS.aux_data, 'smpl', 'SMPL_FEMALE.pkl')
 
     garment_dict = make_garment_dict(objfile, smpl_file, coarse=coarse, n_coarse_levels=n_coarse_levels,
-                                     training=training, n_samples_lbs=n_samples_lbs)
+                                     training=training, n_samples_lbs=n_samples_lbs, smplx_v_rest_pose=smplx_v_rest_pose,
+                                     smpl_params=smpl_params)
 
     if os.path.exists(garments_dict_file):
         with open(garments_dict_file, 'rb') as f:

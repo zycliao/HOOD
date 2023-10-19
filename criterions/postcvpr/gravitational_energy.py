@@ -11,7 +11,7 @@ class Config:
 
 
 def create(mcfg):
-    return Criterion(weight=mcfg.weight, z_axis=mcfg.z_axis)
+    return Criterion(weight=mcfg.weight, g=mcfg.g, z_axis=mcfg.z_axis)
 
 
 class Criterion(nn.Module):

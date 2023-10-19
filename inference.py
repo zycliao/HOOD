@@ -1,4 +1,5 @@
 import os
+import numpy as np
 from utils.validation import Config as ValidationConfig
 from utils.validation import load_runner_from_checkpoint, update_config_for_validation, create_one_sequence_dataloader
 from utils.arguments import load_params
@@ -36,6 +37,7 @@ config_dict['keep_length'] = True
 # Paths to SMPL model and garments_dict file relative to $HOOD_DATA/aux_data
 config_dict['garment_dict_file'] = 'garments_dict.pkl'
 config_dict['smpl_model'] = 'smpl/SMPL_NEUTRAL.pkl'
+config_dict['collision_eps'] = 4e-3
 validation_config = ValidationConfig(**config_dict)
 
 # checkpoint_path = Path(DEFAULTS.data_root) / 'trained_models' / 'postcvpr.pth'
@@ -68,3 +70,12 @@ pickle_dump(dict(trajectories_dict), out_path)
 from utils.mesh_io import save_as_pc2
 
 save_as_pc2(out_path, save_dir, save_mesh=True, prefix=save_name)
+
+# save metrics
+metric_save_path = os.path.join(save_dir, save_name + '_metrics.npz')
+metric_dict = {k: v for k, v in trajectories_dict['metrics'].items() if k.endswith('_per_vert')}
+import functools
+total_per_vert = functools.reduce(lambda a, b: a + b, [np.array(v) for k, v in metric_dict.items()])
+total_per_vert = reduce([v for k, v in metric_dict.items()])
+metric_dict['total_per_vert'] = total_per_vert
+np.savez(metric_save_path, **metric_dict)
