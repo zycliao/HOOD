@@ -52,7 +52,7 @@ def quat_to_axis_angle(quat):
 
 
 class PoseSequence:
-    def __init__(self, npz_file, is_amass=True):
+    def __init__(self, npz_file, is_amass=True, keep_hand=False):
         with np.load(npz_file) as data:
             self.poses = data["poses"].astype(np.float32)
             self.trans = data["trans"].astype(np.float32)
@@ -77,12 +77,16 @@ class PoseSequence:
             correction_mat = R.from_rotvec(np.array([-np.pi / 2, 0, 0])).as_matrix()
             global_mat = np.einsum('ij,bjk->bik', correction_mat, global_mat)
             self.trans = np.einsum('ij,bj->bi', correction_mat, self.trans)
-            self.trans = np.einsum('ij,bj->bi', R.from_rotvec(np.array([0, -np.pi / 2, 0])).as_matrix(), self.trans)
+            # self.trans = np.einsum('ij,bj->bi', R.from_rotvec(np.array([0, -np.pi / 2, 0])).as_matrix(), self.trans)
             self.poses[:, 0] = R.from_matrix(global_mat).as_rotvec()
-            self.poses = self.poses[:, :24].reshape([num_frames*24, 3])
+            if keep_hand:
+                num_joints = 52
+            else:
+                num_joints = 24
+            self.poses = self.poses[:, :num_joints].reshape([num_frames*num_joints, 3])
             #
             # self.poses = R.from_rotvec(self.poses).as_quat().reshape([-1, 24, 4])
-            self.poses = axis_angle_to_quat(self.poses).reshape([num_frames, 24, 4])
+            self.poses = axis_angle_to_quat(self.poses).reshape([num_frames, num_joints, 4])
             # self.poses = self.poses[:, :, [3, 0, 1, 2]]
 
         # convert self.poses from axis-angle to quaternion

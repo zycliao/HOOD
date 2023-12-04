@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 
 from utils.common import add_field_to_pyg_batch
 
@@ -41,6 +42,24 @@ class SampleCollector:
             velocity_cloth = prev_sample['cloth'].pred_velocity
         else:
             velocity_cloth = sample['cloth'].pos - sample['cloth'].prev_pos
+        add_field_to_pyg_batch(sample, 'velocity', velocity_cloth, 'cloth', 'pos')
+
+        if self.obstacle:
+            velocity_obstacle_curr = sample['obstacle'].pos - sample['obstacle'].prev_pos
+            velocity_obstacle_next = sample['obstacle'].target_pos - sample['obstacle'].pos
+            add_field_to_pyg_batch(sample, 'velocity', velocity_obstacle_curr, 'obstacle', 'pos')
+            add_field_to_pyg_batch(sample, 'next_velocity', velocity_obstacle_next, 'obstacle', 'pos')
+        return sample
+
+    def add_velocity_aug(self, sample, prev_sample, aug=1):
+        if prev_sample is not None:
+            velocity_cloth = prev_sample['cloth'].pred_velocity
+        else:
+            velocity_cloth = sample['cloth'].pos - sample['cloth'].prev_pos
+
+        if aug > 1:
+            if np.random.rand() < 0.5:
+                velocity_cloth = velocity_cloth * np.random.uniform(1, aug)
         add_field_to_pyg_batch(sample, 'velocity', velocity_cloth, 'cloth', 'pos')
 
         if self.obstacle:

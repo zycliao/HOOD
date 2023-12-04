@@ -17,23 +17,29 @@ def pose_transition(start_pose, body_pose, global_orient, transl, transition_fra
     global_orient = np.concatenate([transition_global_orient, global_orient], axis=0)
     return body_pose, global_orient, transl
 
-input_motion_path = "/root/data/AMASS/MPI_mosh/00046/stretches_poses.npz"
+# input_motion_path = "/root/data/AMASS/MPI_mosh/00046/stretches_poses.npz"
+input_motion_path = "/root/data/AMASS/CMU/01/01_09_poses.npz"
 out_dir = "/root/data/hood_data/vto_dataset/smpl_parameters"
-save_name = "stretch_female"
+save_name = "01_09"
 target_fps = 30
 transition_time = 1
-total_num_frames = 300
+total_num_frames = 1000
 save_mesh = True
 
 os.makedirs(out_dir, exist_ok=True)
 
-sequence = PoseSequence(input_motion_path, True)
+sequence = PoseSequence(input_motion_path, True, keep_hand=False)
 poses, transl = sequence.get_by_fps(target_fps, True)
 body_pose = poses[:, 1:]
+# body_pose[:, 22:24] = 0
+# body_pose[:, 22:24, 3] = 1
 global_orient = poses[:, 0]
-betas = np.zeros((10,), dtype=np.float32)
-betas[0] = -2
-betas[1] = 2
+betas = np.load(input_motion_path)['betas'][:10]
+gender = str(np.load(input_motion_path)['gender'])
+
+# betas = np.zeros((10,), dtype=np.float32)
+# betas[0] = -1
+# betas[1] = 1
 
 # transition from T-pose to first pose
 if transition_time > 0:
@@ -76,14 +82,18 @@ if save_mesh:
     import torch
     import trimesh
     device = torch.device('cuda:0')
-    body_model = smplx.create("/root/data/smpl_models/smpl/SMPL_FEMALE.pkl", model_type='smpl').to(device)
+    body_model = smplx.create(f"/root/data/smpl_models/smpl/SMPL_{gender.upper()}.pkl", model_type='smpl').to(device)
     body_output = body_model(betas=torch.tensor(betas, dtype=torch.float32, device=device
                                                 ).unsqueeze(0).repeat(len(body_pose), 1),
                              body_pose=torch.tensor(body_pose, dtype=torch.float32, device=device),
                              global_orient=torch.tensor(global_orient, dtype=torch.float32, device=device),
-                             transl=torch.tensor(transl, dtype=torch.float32, device=device))
+                             transl=torch.tensor(transl, dtype=torch.float32, device=device),
+
+                             )
+    joints = body_output.joints.detach().cpu().numpy()[:, :24]
     vertices = body_output.vertices.detach().cpu().numpy()
     faces = body_model.faces
     writePC2(os.path.join(out_dir, save_name + '.pc2'), vertices)
     mesh = trimesh.Trimesh(vertices=vertices[0], faces=faces)
     mesh.export(os.path.join(out_dir, save_name + '.obj'))
+    np.save(os.path.join(out_dir, save_name + '_joints.npy'), joints)

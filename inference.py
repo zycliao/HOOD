@@ -16,16 +16,18 @@ config_dict['lame_mu'] = 23600.0
 config_dict['lame_lambda'] = 44400
 config_dict['bending_coeff'] = 3.962e-05
 
-# config_dict['lame_mu'] = 31818.0273
-# config_dict['lame_lambda'] = 18165.1719
-# config_dict['bending_coeff'] = 9.1493e-06
 
 # config_dict['lame_mu'] = 50000
 # config_dict['lame_lambda'] = 66400
 # config_dict['bending_coeff'] = 1e-7
 
-config_name = 'postcvpr_big'
-save_name = 'postcvpr_big'
+# config_dict['lame_mu'] = 31818.0273
+# config_dict['lame_lambda'] = 18165.1719
+# config_dict['bending_coeff'] = 9.1493e-06
+
+config_name = 'postcvpr'
+# save_name = 'postcvpr_velocity_aug'
+save_name = 'postcvpr_sim_data'
 save_dir = "/root/data/cloth_recon/c3/hood_results"
 garment_name = 'dress'
 os.makedirs(save_dir, exist_ok=True)
@@ -41,8 +43,12 @@ config_dict['collision_eps'] = 4e-3
 validation_config = ValidationConfig(**config_dict)
 
 # checkpoint_path = Path(DEFAULTS.data_root) / 'trained_models' / 'postcvpr.pth'
+
+# checkpoint_path = Path(DEFAULTS.data_root) / 'experiments' / 'postcvpr_velocity_aug_20231129_174704' / 'checkpoints' / 'step_0000098000.pth'
+checkpoint_path = Path(DEFAULTS.data_root) / 'experiments' / 'postcvpr_sim_data_20231129_223020' / 'checkpoints' / 'step_0000300000.pth'
+# checkpoint_path = Path(DEFAULTS.data_root) / 'experiments' / 'postcvpr_explicit2_20231025_215127' / 'checkpoints' / 'step_0000128000.pth'
 # checkpoint_path = Path(DEFAULTS.data_root) / 'experiments' / '20230728_092347' / 'checkpoints' / 'step_0000150000.pth'
-checkpoint_path = Path(DEFAULTS.data_root) / 'experiments' / 'postcvpr_big_20230809_190151' / 'checkpoints' / 'step_0000160000.pth'
+# checkpoint_path = Path(DEFAULTS.data_root) / 'experiments' / 'postcvpr_explicit_20231021_163934' / 'checkpoints' / 'step_0000170000.pth'
 
 # load the config from .yaml file and load .py modules specified there
 modules, experiment_config = load_params(config_name)
@@ -72,10 +78,10 @@ from utils.mesh_io import save_as_pc2
 save_as_pc2(out_path, save_dir, save_mesh=True, prefix=save_name)
 
 # save metrics
-metric_save_path = os.path.join(save_dir, save_name + '_metrics.npz')
-metric_dict = {k: v for k, v in trajectories_dict['metrics'].items() if k.endswith('_per_vert')}
-import functools
-total_per_vert = functools.reduce(lambda a, b: a + b, [np.array(v) for k, v in metric_dict.items()])
-total_per_vert = reduce([v for k, v in metric_dict.items()])
-metric_dict['total_per_vert'] = total_per_vert
-np.savez(metric_save_path, **metric_dict)
+# metric_save_path = os.path.join(save_dir, save_name + '_metrics.npz')
+# metric_dict = {k: v for k, v in trajectories_dict['metrics'].items() if k.endswith('_per_vert')}
+# import functools
+# total_per_vert = functools.reduce(lambda a, b: a + b, [np.array(v) for k, v in metric_dict.items()])
+# total_per_vert = reduce([v for k, v in metric_dict.items()])
+# metric_dict['total_per_vert'] = total_per_vert
+# np.savez(metric_save_path, **metric_dict)

@@ -12,23 +12,24 @@ from pathlib import Path
 
 # Set material paramenters, see configs/cvpr.yaml for the training ranges for each parameter
 config_dict = dict()
-config_dict['density'] = 0.15
+config_dict['density'] = 0.20022
 # target material
 config_dict['lame_mu'] = 23600.0
 config_dict['lame_lambda'] = 44400
 config_dict['bending_coeff'] = 3.962e-05
 
-# # init material
-# config_dict['lame_mu'] = 31818.0273
-# config_dict['lame_lambda'] = 18165.1719
-# config_dict['bending_coeff'] = 9.1493e-06
 
 # config_dict['lame_mu'] = 50000
 # config_dict['lame_lambda'] = 66400
 # config_dict['bending_coeff'] = 1e-7
 
+# init material
+# config_dict['lame_mu'] = 31818.0273
+# config_dict['lame_lambda'] = 18165.1719
+# config_dict['bending_coeff'] = 9.1493e-06
+
 garment_name = 'dress'
-save_name = 'pbs_gt_material_0912'
+save_name = 'pbs_mat1'
 
 # garment_name = 'anran_tic_short_sleeve_upper'
 # save_name = 'anran_tic_stretch'
