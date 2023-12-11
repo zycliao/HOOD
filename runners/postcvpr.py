@@ -22,7 +22,7 @@ from runners.utils.collector import SampleCollector
 from runners.utils.collision import CollisionPreprocessor
 from runners.utils.material import RandomMaterial
 from utils.cloth_and_material import FaceNormals, ClothMatAug
-from utils.common import move2device, save_checkpoint, add_field_to_pyg_batch
+from utils.common import move2device, save_checkpoint, add_field_to_pyg_batch, NodeType
 from utils.defaults import DEFAULTS
 
 
@@ -282,6 +282,208 @@ class Runner(nn.Module):
         for s in ['pred', 'obstacle']:
             trajectories_dicts[s] = np.stack(trajectories_dicts[s], axis=0)
         return trajectories_dicts
+
+
+    def forward_simulation_lbfgs(self, sequence, material_dict=None, start_step=0, n_steps=-1, init_cloth_pos=None,
+                           bare=False, record_time=False):
+        """
+        Generates a trajectory for the full sequence, use this function for inference
+
+        :param sequence: torch geometric batch with the sequence
+        :param material_dict: dict with material properties, the value should be torch.Tensor
+        :param n_steps: number of steps to predict, if -1, predicts for the full sequence
+        :param bare: if true, the loss terms are not computed, use for faster validation
+        :param record_time: if true, records the time spent on the forward pass and adds it to trajectories_dicts['metrics']
+        :return: trajectories_dicts: dict with the following fields:
+            'pred': np.ndarray (NxVx3) predicted cloth trajectory
+            'obstacle': np.ndarray (NxWx3) body trajectory
+            'cloth_faces': np.ndarray (Fx3) cloth faces
+            'obstacle_faces': np.ndarray (Fox3) body faces
+            'metrics': dictionary with by-frame loss values
+        """
+        sequence = add_field_to_pyg_batch(sequence, 'iter', [0], 'cloth', reference_key=None)
+        sequence = self.add_cloth_obj(sequence, material_dict)
+        vertex_type = sequence['cloth'].vertex_type
+        pinned_mask = vertex_type == NodeType.HANDLE
+
+        n_samples = sequence['obstacle'].pos.shape[1]
+        if n_steps > 0:
+            n_samples = min(n_samples, n_steps)
+
+        trajectories_dicts = defaultdict(lambda: defaultdict(list))
+
+        if record_time:
+            st_time = time.time()
+
+        # trajectory, obstacle_trajectory, metrics_dict = self._rollout(sequence, n_samples,
+        #                                                               progressbar=True, bare=bare)
+
+        trajectory = []
+        obstacle_trajectory = []
+
+        metrics_dict = defaultdict(list)
+
+        progressbar = True
+        pbar = range(start_step, start_step+n_samples)
+        if progressbar:
+            pbar = tqdm(pbar)
+
+        if init_cloth_pos is not None:
+            pred_pos_init = init_cloth_pos
+        else:
+            pred_pos_init = sequence['cloth'].pos[:, 0].clone().detach()
+
+        prev_out_dict = None
+        for i in pbar:
+
+            pred_pos = torch.tensor(pred_pos_init, dtype=torch.float32, device=self.mcfg.device, requires_grad=True)
+            optimizer = torch.optim.LBFGS([pred_pos], lr=1, max_iter=1000, history_size=100, tolerance_grad=1e-6,
+                                          tolerance_change=1e-10)
+
+            with torch.no_grad():
+                if i > 0:
+                    if 'pred_pos' in sequence._slice_dict['cloth']:
+                        sequence._slice_dict['cloth'].pop('pred_pos')
+                    if 'pred_velocity' in sequence._slice_dict['cloth']:
+                        sequence._slice_dict['cloth'].pop('pred_velocity')
+                    if 'pred_pos' in sequence._inc_dict['cloth']:
+                        sequence._inc_dict['cloth'].pop('pred_pos')
+                    if 'pred_velocity' in sequence._inc_dict['cloth']:
+                        sequence._inc_dict['cloth'].pop('pred_velocity')
+                state_ = self.collect_sample_wholeseq(sequence, i, prev_out_dict)
+                self.lbfgs_var = {'state': state_, 'loss_dict': {}, 'per_vert_dict': {}}
+
+
+
+            for i_iter in range(3):
+                def closure():
+                    optimizer.zero_grad()
+                    state_ = self.lbfgs_var['state']
+                    pinned_pos = pred_pos * torch.logical_not(pinned_mask) + state_['cloth'].target_pos * pinned_mask
+                    state_ = add_field_to_pyg_batch(state_, 'pred_pos', pinned_pos, 'cloth', 'pos')
+                    self.lbfgs_var['state'] = state_
+
+                    loss_dict, per_vert_dict = self.criterion_pass(self.lbfgs_var['state'])
+                    self.lbfgs_var['loss_dict'] = loss_dict
+                    self.lbfgs_var['per_vert_dict'] = per_vert_dict
+                    loss = 0
+                    print_info = f"Iter {i_iter}, "
+                    for k, v in loss_dict.items():
+                        loss += v
+                        print_info += f"{k}: {v.item():.5f}, "
+                    loss.backward()
+                    return loss
+
+                optimizer.step(closure)
+
+
+            state = self.lbfgs_var['state']
+            with torch.no_grad():
+                pred_pos = pred_pos * torch.logical_not(pinned_mask) + state['cloth'].target_pos * pinned_mask
+                state['cloth'].pred_pos = pred_pos
+                pred_velocity = state['cloth'].pred_pos - state['cloth'].pos
+                pred_pos_init = 2 * pred_pos - state['cloth'].pos
+                state = add_field_to_pyg_batch(state, 'pred_velocity', pred_velocity, 'cloth', 'pos')
+
+                if i < start_step + n_samples - 1:
+                    sequence['cloth'].pos[:, i + 1] = pred_pos
+
+                trajectory.append(state['cloth'].pred_pos.detach().cpu().numpy())
+                obstacle_trajectory.append(state['obstacle'].target_pos.detach().cpu().numpy())
+                for k, v in self.lbfgs_var['loss_dict'].items():
+                    metrics_dict[k].append(v.item())
+                for k, v in self.lbfgs_var['per_vert_dict'].items():
+                    metrics_dict[k].append(v.detach().cpu().numpy())
+
+                prev_out_dict = state.clone()
+
+
+        if record_time:
+            total_time = time.time() - st_time
+            # metrics_dict['time'] = total_time
+
+        trajectories_dicts['pred'] = trajectory
+        trajectories_dicts['obstacle'] = obstacle_trajectory
+        trajectories_dicts['metrics'] = dict(metrics_dict)
+        trajectories_dicts['cloth_faces'] = sequence['cloth'].faces_batch.T.cpu().numpy()
+        trajectories_dicts['obstacle_faces'] = sequence['obstacle'].faces_batch.T.cpu().numpy()
+
+        for s in ['pred', 'obstacle']:
+            trajectories_dicts[s] = np.stack(trajectories_dicts[s], axis=0)
+        return trajectories_dicts
+
+
+    def sequence_criterion(self, pred_sequence, sequence, material_dict=None, start_step=0, n_steps=-1, gt_sequence=None):
+        """
+        Generates a trajectory for the full sequence, use this function for inference
+
+        :param sequence: torch geometric batch with the sequence
+        :param material_dict: dict with material properties, the value should be torch.Tensor
+        :param n_steps: number of steps to predict, if -1, predicts for the full sequence
+        :param bare: if true, the loss terms are not computed, use for faster validation
+        :param record_time: if true, records the time spent on the forward pass and adds it to trajectories_dicts['metrics']
+        :return: trajectories_dicts: dict with the following fields:
+            'pred': np.ndarray (NxVx3) predicted cloth trajectory
+            'obstacle': np.ndarray (NxWx3) body trajectory
+            'cloth_faces': np.ndarray (Fx3) cloth faces
+            'obstacle_faces': np.ndarray (Fox3) body faces
+            'metrics': dictionary with by-frame loss values
+        """
+        torch.set_grad_enabled(False)
+        sequence = add_field_to_pyg_batch(sequence, 'iter', [0], 'cloth', reference_key=None)
+        sequence = self.add_cloth_obj(sequence, material_dict)
+
+        n_samples = sequence['obstacle'].pos.shape[1]
+        if n_steps > 0:
+            n_samples = min(n_samples, n_steps)
+
+        metrics_dict = defaultdict(list)
+        pbar = range(start_step, start_step+n_samples)
+
+        if not torch.is_tensor(pred_sequence):
+            pred_sequence = torch.tensor(pred_sequence, dtype=torch.float32, device=self.mcfg.device)
+
+        if gt_sequence is not None:
+            if not torch.is_tensor(gt_sequence):
+                gt_sequence = torch.tensor(gt_sequence, dtype=torch.float32, device=self.mcfg.device)
+            dist = torch.mean(torch.norm(pred_sequence - gt_sequence, dim=-1))
+            metrics_dict['dist'] = dist.cpu().item()
+
+        prev_out_dict = None
+        for i in pbar:
+            pred_pos = pred_sequence[i]
+
+            if i > 0:
+                if 'pred_pos' in sequence._slice_dict['cloth']:
+                    sequence._slice_dict['cloth'].pop('pred_pos')
+                if 'pred_velocity' in sequence._slice_dict['cloth']:
+                    sequence._slice_dict['cloth'].pop('pred_velocity')
+                if 'pred_pos' in sequence._inc_dict['cloth']:
+                    sequence._inc_dict['cloth'].pop('pred_pos')
+                if 'pred_velocity' in sequence._inc_dict['cloth']:
+                    sequence._inc_dict['cloth'].pop('pred_velocity')
+            state = self.collect_sample_wholeseq(sequence, i, prev_out_dict)
+
+            state = add_field_to_pyg_batch(state, 'pred_pos', pred_pos, 'cloth', 'pos')
+
+            loss_dict, per_vert_dict = self.criterion_pass(state)
+
+            state['cloth'].pred_pos = pred_pos
+            pred_velocity = state['cloth'].pred_pos - state['cloth'].pos
+            # pred_pos_init = 2 * pred_pos - state['cloth'].pos
+            state = add_field_to_pyg_batch(state, 'pred_velocity', pred_velocity, 'cloth', 'pos')
+
+            if i < start_step + n_samples - 1:
+                sequence['cloth'].pos[:, i + 1] = pred_pos
+
+            for k, v in loss_dict.items():
+                metrics_dict[k].append(v.item())
+            for k, v in per_vert_dict.items():
+                metrics_dict[k].append(v.detach().cpu().numpy())
+            prev_out_dict = state.clone()
+
+        torch.set_grad_enabled(True)
+        return dict(metrics_dict)
 
 
     def valid_rollout(self, sequence, n_steps=-1, bare=False, record_time=False):

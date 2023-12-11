@@ -10,9 +10,11 @@ hostname = socket.gethostname()
 if hostname == 'rsm-gamma':
     HOOD_PROJECT = "/home/zhouyingchengliao/project/HOOD"
     HOOD_DATA  = "/data2/zycliao/hood_data"
+    NC_DIR = "/data2/zycliao/neural_cloth"
 else:
     HOOD_PROJECT = "/mnt/c/project/HOOD"
     HOOD_DATA = "/mnt/c/data/hood_data"
+    NC_DIR = "/mnt/c/data/neural_cloth"
 
 DEFAULTS = dict()
 

@@ -2,6 +2,7 @@ experiment:
   name: debug
   save_checkpoint_every: 2000
   n_epochs: 20000000
+  checkpoint_path: '/data2/zycliao/hood_data/trained_models/postcvpr.pth'
 
 runner:
   postcvpr:
@@ -26,7 +27,7 @@ dataloader:
   pyg_data: True
   dataset:
     postcvpr_sim_data:
-      sim_data_dir: '/root/data/neural_cloth/simulation/hood_postproc'
+      sim_data_dir: '/data2/zycliao/hood_data/hood_postproc'
       data_root: 'vto_dataset/smpl_parameters'
       smpl_model: 'smpl/SMPL_NEUTRAL.pkl'
       garment_dict_file: 'garments_dict.pkl'

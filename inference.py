@@ -27,7 +27,7 @@ config_dict['bending_coeff'] = 3.962e-05
 
 config_name = 'postcvpr'
 # save_name = 'postcvpr_velocity_aug'
-save_name = 'postcvpr_sim_data'
+save_name = 'postcvpr_sim_data2'
 save_dir = "/root/data/cloth_recon/c3/hood_results"
 garment_name = 'dress'
 os.makedirs(save_dir, exist_ok=True)
@@ -45,7 +45,8 @@ validation_config = ValidationConfig(**config_dict)
 # checkpoint_path = Path(DEFAULTS.data_root) / 'trained_models' / 'postcvpr.pth'
 
 # checkpoint_path = Path(DEFAULTS.data_root) / 'experiments' / 'postcvpr_velocity_aug_20231129_174704' / 'checkpoints' / 'step_0000098000.pth'
-checkpoint_path = Path(DEFAULTS.data_root) / 'experiments' / 'postcvpr_sim_data_20231129_223020' / 'checkpoints' / 'step_0000300000.pth'
+# checkpoint_path = Path(DEFAULTS.data_root) / 'experiments' / 'postcvpr_sim_data_20231129_223020' / 'checkpoints' / 'step_0000300000.pth'
+checkpoint_path = Path(DEFAULTS.data_root) / 'experiments' / 'postcvpr_sim_data_20231207_134953' / 'checkpoints' / 'step_0000152000.pth'
 # checkpoint_path = Path(DEFAULTS.data_root) / 'experiments' / 'postcvpr_explicit2_20231025_215127' / 'checkpoints' / 'step_0000128000.pth'
 # checkpoint_path = Path(DEFAULTS.data_root) / 'experiments' / '20230728_092347' / 'checkpoints' / 'step_0000150000.pth'
 # checkpoint_path = Path(DEFAULTS.data_root) / 'experiments' / 'postcvpr_explicit_20231021_163934' / 'checkpoints' / 'step_0000170000.pth'
