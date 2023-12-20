@@ -1,6 +1,7 @@
 experiment:
   name: debug
-  save_checkpoint_every: 2000
+  save_checkpoint_every: 10000
+  validate_every: 5000
   n_epochs: 20000000
 
 runner:
@@ -30,6 +31,8 @@ dataloader:
       smpl_model: 'smpl/SMPL_NEUTRAL.pkl'
       garment_dict_file: 'garments_dict.pkl'
       split_path: 'datasplits/train.csv'
+      val_split_path: 'datasplits/val_sim.csv'
+      val_sim_dir: 'simulation_hood_full'
       lookup_steps: 5
       pinned_verts: True
       random_betas: True

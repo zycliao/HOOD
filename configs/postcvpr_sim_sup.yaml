@@ -1,11 +1,12 @@
 experiment:
   name: debug
-  save_checkpoint_every: 2000
+  save_checkpoint_every: 10000
+  validate_every: 5000
   n_epochs: 20000000
-  checkpoint_path: '/data2/zycliao/hood_data/trained_models/postcvpr.pth'
+#  checkpoint_path: 'trained_models/postcvpr.pth'
 
 runner:
-  postcvpr:
+  postcvpr_supervise:
     warmup_steps: 100
     optimizer:
       lr: 5e-5
@@ -22,25 +23,27 @@ runner:
       density_max: 7e-1
 
 dataloader:
-  num_workers: 8
+  num_workers: 4
   batch_size: 1
   pyg_data: True
   dataset:
-    postcvpr_sim_data:
-      sim_data_dir: 'hood_postproc'
+    postcvpr_sim_sup:
+      sim_data_dir: 'simulation_hood_full/postproc'
       data_root: 'vto_dataset/smpl_parameters'
       smpl_model: 'smpl/SMPL_NEUTRAL.pkl'
       garment_dict_file: 'garments_dict.pkl'
-      split_path: 'datasplits/train.csv'
+      split_path: 'datasplits/train_sim.csv'
       val_split_path: 'datasplits/val_sim.csv'
       val_sim_dir: 'simulation_hood_full'
       lookup_steps: 5
       pinned_verts: True
-      random_betas: True
+      random_betas: False
       betas_scale: 3.
       n_coarse_levels: 3
 
 criterions:
+  postcvpr.supervise:
+    weight: 0.01
   postcvpr.mataug.stretching_energy:
   postcvpr.inertia:
   postcvpr.gravitational_energy:

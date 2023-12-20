@@ -61,37 +61,45 @@ class RandomMaterial:
 
         B = sample.num_graphs
         device = sample['cloth'].pos.device
-        
-        if material_dict is None:
-            density = self.get_density(device, B)
-            lame_mu, lame_mu_input = self.get_lame_mu(device, B)
-            lame_lambda, lame_lambda_input = self.get_lame_lambda(device, B)
-            bending_coeff, bending_coeff_input = self.get_bending_coeff(device, B)
+
+        if 'lame_mu' in sample['cloth']:
+            # this is for supervised training when the material is already provided
+            for k in ['lame_mu', 'lame_mu_input', 'lame_lambda', 'lame_lambda_input', 'bending_coeff',
+                      'bending_coeff_input', 'density']:
+                assert k in sample['cloth'], f'{k} is not in the sample'
+            density = sample['cloth'].density
+            lame_mu = sample['cloth'].lame_mu
+            lame_lambda = sample['cloth'].lame_lambda
+            bending_coeff = sample['cloth'].bending_coeff
         else:
-            density = material_dict['density']
-            lame_mu = material_dict['lame_mu']
-            lame_lambda = material_dict['lame_lambda']
-            bending_coeff = material_dict['bending_coeff']
-            lame_mu_input = relative_between_log(self.mcfg.lame_mu_min, self.mcfg.lame_mu_max, lame_mu)
-            lame_lambda_input = relative_between(self.mcfg.lame_lambda_min, self.mcfg.lame_lambda_max, lame_lambda)
-            bending_coeff_input = relative_between_log(self.mcfg.bending_coeff_min, self.mcfg.bending_coeff_max,
-                                                         bending_coeff)
+            if material_dict is None:
+                density = self.get_density(device, B)
+                lame_mu, lame_mu_input = self.get_lame_mu(device, B)
+                lame_lambda, lame_lambda_input = self.get_lame_lambda(device, B)
+                bending_coeff, bending_coeff_input = self.get_bending_coeff(device, B)
+            else:
+                density = material_dict['density']
+                lame_mu = material_dict['lame_mu']
+                lame_lambda = material_dict['lame_lambda']
+                bending_coeff = material_dict['bending_coeff']
+                lame_mu_input = relative_between_log(self.mcfg.lame_mu_min, self.mcfg.lame_mu_max, lame_mu)
+                lame_lambda_input = relative_between(self.mcfg.lame_lambda_min, self.mcfg.lame_lambda_max, lame_lambda)
+                bending_coeff_input = relative_between_log(self.mcfg.bending_coeff_min, self.mcfg.bending_coeff_max,
+                                                             bending_coeff)
+
+            add_field_to_pyg_batch(sample, 'density', density, 'cloth', reference_key=None, one_per_sample=True)
+            add_field_to_pyg_batch(sample, 'lame_mu', lame_mu, 'cloth', reference_key=None, one_per_sample=True)
+            add_field_to_pyg_batch(sample, 'lame_lambda', lame_lambda, 'cloth', reference_key=None,
+                                   one_per_sample=True)
+            add_field_to_pyg_batch(sample, 'bending_coeff', bending_coeff, 'cloth', reference_key=None,
+                                   one_per_sample=True)
+            add_field_to_pyg_batch(sample, 'lame_mu_input', lame_mu_input, 'cloth', reference_key=None, one_per_sample=True)
+            add_field_to_pyg_batch(sample, 'lame_lambda_input', lame_lambda_input, 'cloth', reference_key=None,
+                                   one_per_sample=True)
+            add_field_to_pyg_batch(sample, 'bending_coeff_input', bending_coeff_input, 'cloth', reference_key=None,
+                                   one_per_sample=True)
 
         bending_multiplier = self.mcfg.bending_multiplier
-        
-        
-        add_field_to_pyg_batch(sample, 'lame_mu', lame_mu, 'cloth', reference_key=None, one_per_sample=True)
-        add_field_to_pyg_batch(sample, 'lame_lambda', lame_lambda, 'cloth', reference_key=None,
-                               one_per_sample=True)
-        add_field_to_pyg_batch(sample, 'bending_coeff', bending_coeff, 'cloth', reference_key=None,
-                               one_per_sample=True)
-        add_field_to_pyg_batch(sample, 'lame_mu_input', lame_mu_input, 'cloth', reference_key=None, one_per_sample=True)
-        add_field_to_pyg_batch(sample, 'lame_lambda_input', lame_lambda_input, 'cloth', reference_key=None,
-                               one_per_sample=True)
-        add_field_to_pyg_batch(sample, 'bending_coeff_input', bending_coeff_input, 'cloth', reference_key=None,
-                               one_per_sample=True)
-        
-        
         material = Material(density, lame_mu, lame_lambda,
                             bending_coeff, bending_multiplier)
         cloth_obj.set_material(material)

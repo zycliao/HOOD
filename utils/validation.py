@@ -11,8 +11,8 @@ from utils.arguments import create_runner, create_dataloader_module
 
 @dataclass
 class Config:
-    garment_dict_file: str = MISSING                    # Path to the garment dict file with data for all garments relative to $HOOD_DATA/aux_data/
-    smpl_model: str = MISSING                           # Path to the .csv split file relative to $HOOD_DATA/aux_data/
+    garment_dict_file: str = None                    # Path to the garment dict file with data for all garments relative to $HOOD_DATA/aux_data/
+    smpl_model: str = None                           # Path to the .csv split file relative to $HOOD_DATA/aux_data/
     data_root: Optional[str] = None                     # Path to the data root
     obstacle_dict_file: Optional[str] = 'smpl_aux.pkl'  # Path to the file with auxiliary data for obstacles relative to $HOOD_DATA/aux_data/
 

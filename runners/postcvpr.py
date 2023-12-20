@@ -16,6 +16,7 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from tensorboardX import SummaryWriter
 import wandb
 
 from runners.utils.collector import SampleCollector
@@ -24,6 +25,8 @@ from runners.utils.material import RandomMaterial
 from utils.cloth_and_material import FaceNormals, ClothMatAug
 from utils.common import move2device, save_checkpoint, add_field_to_pyg_batch, NodeType
 from utils.defaults import DEFAULTS
+from criterions.postcvpr.collision_penalty import collision_handling
+from utils.mesh_io import writePC2
 
 
 @dataclass
@@ -86,9 +89,13 @@ class Runner(nn.Module):
         self.collision_solver = CollisionPreprocessor(mcfg)
         self.random_material = RandomMaterial(mcfg.material)
 
-        if create_wandb:
-            wandb.login()
-            self.wandb_run = wandb.init(project='HOOD')
+        # if create_wandb:
+        #     wandb.login()
+        #     self.wandb_run = wandb.init(project='HOOD')
+        self.writer = None
+
+    def setup_writer(self, log_dir):
+        self.writer = SummaryWriter(log_dir=log_dir)
 
     def rollout_material(self, sequence, prev_out_dict=None, material_dict=None, start_step=0, n_steps=-1, bare=False, record_time=False,
                          ext_force=None):
@@ -157,7 +164,7 @@ class Runner(nn.Module):
         return trajectories_dicts, prev_out_dict
 
     def forward_simulation(self, sequence, material_dict=None, start_step=0, n_steps=-1, init_cloth_pos=None,
-                           bare=False, record_time=False):
+                           explicit_solve_collision=False, record_time=False, verbose=False):
         """
         Generates a trajectory for the full sequence, use this function for inference
 
@@ -175,6 +182,8 @@ class Runner(nn.Module):
         """
         sequence = add_field_to_pyg_batch(sequence, 'iter', [0], 'cloth', reference_key=None)
         sequence = self.add_cloth_obj(sequence, material_dict)
+        vertex_type = sequence['cloth'].vertex_type
+        pinned_mask = vertex_type == NodeType.HANDLE
 
         n_samples = sequence['obstacle'].pos.shape[1]
         if n_steps > 0:
@@ -205,10 +214,6 @@ class Runner(nn.Module):
 
         prev_out_dict = None
         for i in pbar:
-
-            pred_pos = torch.tensor(pred_pos_init, dtype=torch.float32, device=self.mcfg.device, requires_grad=True)
-            optimizer = torch.optim.Adam([pred_pos], lr=0.0003)
-
             with torch.no_grad():
                 if i > 0:
                     if 'pred_pos' in sequence._slice_dict['cloth']:
@@ -221,26 +226,43 @@ class Runner(nn.Module):
                         sequence._inc_dict['cloth'].pop('pred_velocity')
                 state = self.collect_sample_wholeseq(sequence, i, prev_out_dict)
 
+            pred_pos_init = collision_handling(pred_pos_init, state['obstacle'].target_pos, state['obstacle'].faces_batch.T,
+                                               self.normals_f, eps=4e-3)
+
+            pred_pos = torch.tensor(pred_pos_init, dtype=torch.float32, device=self.mcfg.device, requires_grad=True)
+            optimizer = torch.optim.Adam([pred_pos], lr=0.0003)
+
             min_loss = np.inf
             min_iter = -1
-            for i_iter in range(1000):
+            for i_iter in range(3000):
                 optimizer.zero_grad()
-                if i_iter == 0:
-                    state = add_field_to_pyg_batch(state, 'pred_pos', pred_pos, 'cloth', 'pos')
-                else:
-                    state['cloth'].pred_pos = pred_pos
 
-                loss_dict, per_vert_dict = self.criterion_pass(state)
+                pinned_pos = pred_pos * torch.logical_not(pinned_mask) + state['cloth'].target_pos * pinned_mask
+                if i_iter == 0:
+                    state = add_field_to_pyg_batch(state, 'pred_pos', pinned_pos, 'cloth', 'pos')
+                else:
+                    state['cloth'].pred_pos = pinned_pos
+
+                if i_iter == 0:
+                    use_cache = False
+                else:
+                    use_cache = True
+                loss_dict, per_vert_dict = self.criterion_pass(state, use_cache=use_cache)
                 loss = 0
                 print_info = f"Iter {i_iter}, "
                 for k, v in loss_dict.items():
                     loss += v
                     print_info += f"{k}: {v.item():.5f}, "
                 loss.backward()
+
+                pred_pos.grad = torch.where(torch.isnan(pred_pos.grad),
+                                            torch.zeros_like(pred_pos.grad), pred_pos.grad)
+
                 optimizer.step()
 
-                if i_iter % 50 == 0:
-                    print(print_info)
+                if verbose:
+                    if i_iter % 50 == 0:
+                        print(print_info)
 
                 loss_val = loss.detach().cpu().item()
                 # print(f'iter {i_iter}, loss {loss_val}')
@@ -251,6 +273,11 @@ class Runner(nn.Module):
                     break
 
             with torch.no_grad():
+                pred_pos = pred_pos * torch.logical_not(pinned_mask) + state['cloth'].target_pos * pinned_mask
+
+                if explicit_solve_collision:
+                    pred_pos = collision_handling(pred_pos, state['obstacle'].target_pos, state['obstacle'].faces_batch.T,
+                                                  self.normals_f, eps=4e-3)
                 state['cloth'].pred_pos = pred_pos
                 pred_velocity = state['cloth'].pred_pos - state['cloth'].pos
                 pred_pos_init = 2 * pred_pos - state['cloth'].pos
@@ -615,7 +642,7 @@ class Runner(nn.Module):
         sample['cloth'].cloth_obj = self.cloth_obj
         return sample
 
-    def criterion_pass(self, sample_step):
+    def criterion_pass(self, sample_step, use_cache=False):
         """
         Pass the sample through all the loss terms in self.criterion_dict
         and gathers their values in a dictionary
@@ -624,7 +651,10 @@ class Runner(nn.Module):
         loss_dict = dict()
         per_vert_dict = dict()
         for criterion_name, criterion in self.criterion_dict.items():
-            ld = criterion(sample_step)
+            if criterion_name == 'collision_penalty':
+                ld = criterion(sample_step, use_cache=use_cache)
+            else:
+                ld = criterion(sample_step)
             for k, v in ld.items():
                 if k == 'per_vert':
                     per_vert_dict[f"{criterion_name}_{k}"] = v
@@ -708,6 +738,45 @@ class Runner(nn.Module):
         ld_to_write = {k: v.item() for k, v in loss_dict.items()}
         return ld_to_write
 
+    def validation(self, val_sequences, global_step, result_dir=None):
+        if result_dir is not None:
+            os.makedirs(result_dir, exist_ok=True)
+        self.model.eval()
+        torch.set_grad_enabled(False)
+        all_metrics = {}
+        for i, sequence in enumerate(val_sequences):
+            sequence = deepcopy(sequence)
+            trajectories_dicts = self.valid_rollout(sequence)
+            pred = trajectories_dicts['pred']
+            gt = sequence['cloth'].gt.cpu().numpy()
+            gt = np.transpose(gt, [1, 0, 2])
+
+
+            if result_dir is not None:
+                garment_name = sequence['cloth'].garment_name[0]
+                writePC2(os.path.join(result_dir, f'pred_{i}_{garment_name}.pc2'), pred)
+                writePC2(os.path.join(result_dir, f'gt_{i}_{garment_name}.pc2'), gt)
+                writePC2(os.path.join(result_dir, f"body_{i}_{garment_name}.pc2"), trajectories_dicts['obstacle'])
+
+            dist = np.mean(np.linalg.norm(pred - gt, axis=-1), 1)
+
+            trajectories_dicts['metrics']['dist'] = dist * 1000.  # unit is mm
+            for k, v in trajectories_dicts['metrics'].items():
+                if k.endswith('_per_vert'):
+                    continue
+                v = np.mean(v)
+                if k not in all_metrics:
+                    all_metrics[k] = [v]
+                else:
+                    all_metrics[k].append(v)
+
+        for k, v in all_metrics.items():
+            v = np.mean(np.array(v))
+            self.writer.add_scalar(f'val/{k}', v, global_step)
+            # self.wandb_run.log(trajectories_dicts['metr ics'], step=self.global_step)
+        self.model.train()
+        torch.set_grad_enabled(True)
+
 
 def create_optimizer(training_module: Runner, mcfg: DictConfig):
     optimizer = Adam(training_module.parameters(), lr=mcfg.lr)
@@ -724,7 +793,7 @@ def create_optimizer(training_module: Runner, mcfg: DictConfig):
 
 
 def run_epoch(training_module: Runner, aux_modules: dict, dataloader: DataLoader,
-              n_epoch: int, cfg: DictConfig, global_step=None):
+              n_epoch: int, cfg: DictConfig, global_step=None, val_sequences=None):
     global_step = global_step or len(dataloader) * n_epoch
 
     optimizer = aux_modules['optimizer']
@@ -739,7 +808,10 @@ def run_epoch(training_module: Runner, aux_modules: dict, dataloader: DataLoader
         dt_string = now.strftime("%Y%m%d_%H%M%S")
         cfg.run_dir = os.path.join(DEFAULTS.experiment_root, cfg.config + '_' + dt_string)
         checkpoints_dir = os.path.join(cfg.run_dir, 'checkpoints')
+        training_module.setup_writer(cfg.run_dir)
     print(yellow(f'run_epoch started, checkpoints will be saved in {checkpoints_dir}'))
+
+    # training_module.validation(val_sequences, global_step, result_dir=os.path.join(cfg.run_dir, 'result'))
 
     for sample in prbar:
         global_step += 1
@@ -762,10 +834,14 @@ def run_epoch(training_module: Runner, aux_modules: dict, dataloader: DataLoader
         scheduler_to_pass = scheduler if global_step >= training_module.mcfg.warmup_steps else None
         ld_to_write = training_module(sample, roll_steps=roll_steps, optimizer=optimizer_to_pass,
                                       scheduler=scheduler_to_pass)
-        training_module.wandb_run.log(ld_to_write, step=global_step)
+        # training_module.wandb_run.log(ld_to_write, step=global_step)
+        for k, v in ld_to_write.items():
+            training_module.writer.add_scalar(f'train/{k}', v, global_step)
         # save checkpoint every `save_checkpoint_every` steps
         if global_step % cfg.experiment.save_checkpoint_every == 0:
             checkpoint_path = os.path.join(checkpoints_dir, f"step_{global_step:010d}.pth")
             save_checkpoint(training_module, aux_modules, cfg, checkpoint_path)
+        if global_step % cfg.experiment.validate_every == 0:
+            training_module.validation(val_sequences, global_step, result_dir=os.path.join(cfg.run_dir, 'result'))
 
     return global_step

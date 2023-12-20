@@ -2,7 +2,7 @@ import subprocess
 import signal
 import os
 
-available_gpus = (0, 2, 3, 4, 5, 6, 7)
+available_gpus = (0, 1, 3, 4, 5, 6)
 num_runs = 2
 
 task_num = len(available_gpus) * num_runs

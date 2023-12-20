@@ -12,9 +12,9 @@ from smplx import SMPL
 from torch_geometric.data import HeteroData
 
 from utils.coarse import make_coarse_edges
-from utils.common import NodeType, triangles_to_edges, separate_arms, pickle_load
+from utils.common import NodeType, triangles_to_edges, separate_arms, pickle_load, add_field_to_pyg_batch
 from utils.datasets import load_garments_dict, make_garment_smpl_dict
-from utils.defaults import DEFAULTS
+from utils.defaults import *
 from utils.garment_smpl import GarmentSMPL
 
 
@@ -147,7 +147,12 @@ class VertexBuilder:
         """
         Convert a numpy array of vertices to a tensor and permute the axes into [VxNx3] (torch geometric format)
         """
-        pos = torch.tensor(pos).permute(1, 0, 2)
+        if isinstance(pos, np.ndarray):
+            pos = torch.tensor(pos).permute(1, 0, 2)
+        elif isinstance(pos, torch.Tensor):
+            pos = pos.clone().detach().permute(1, 0, 2)
+        else:
+            raise TypeError(f"Unknown type {type(pos)}")
         if not self.mcfg.wholeseq and pos.shape[1] == 1:
             pos = pos[:, 0]
         return pos
@@ -167,6 +172,7 @@ class VertexBuilder:
         N_steps = sequence_dict['body_pose'].shape[0]
         pos_dict = {}
 
+        kwargs['sample'] = sample
         # Build the vertices for the whole sequence
         if self.mcfg.wholeseq:
             all_vertices = VertexBuilder.build(sequence_dict, f_make, 0, None,
@@ -180,7 +186,6 @@ class VertexBuilder:
             n_lookup = 1
             if self.mcfg.lookup_steps > 0:
                 n_lookup = min(self.mcfg.lookup_steps, N_steps - idx - 2)
-            kwargs['sample'] = sample
             all_vertices = VertexBuilder.build(sequence_dict, f_make, idx, idx + 2 + n_lookup,
                                                **kwargs)
             pos_dict["prev_pos"] = all_vertices[:1]
@@ -257,6 +262,8 @@ class GarmentBuilder:
         self.vertex_builder = VertexBuilder(mcfg)
         self.noise_maker = NoiseMaker(mcfg)
 
+        self.materials = np.load(os.path.join(NC_DIR, mcfg.sim_data_dir, '../materials.npz'))
+
     def make_cloth_verts(self, body_pose: np.ndarray, global_orient: np.ndarray, transl: np.ndarray, betas: np.ndarray,
                          garment_name: str, fname=None, idx_start=None, idx_end=None, sample=None) -> np.ndarray:
         """
@@ -272,46 +279,42 @@ class GarmentBuilder:
         """
         body_pose = torch.FloatTensor(body_pose)
         global_orient = torch.FloatTensor(global_orient)
-        transl = torch.FloatTensor(transl)
-        betas = torch.FloatTensor(betas)
-
-        garment_smpl_model = self.garment_smpl_model_dict[garment_name]
-
-        if len(body_pose.shape) == 1:
-            body_pose = body_pose.unsqueeze(0)
-            global_orient = global_orient.unsqueeze(0)
-            transl = transl.unsqueeze(0)
-        if len(betas.shape) == 1:
-            betas = betas.unsqueeze(0)
 
         wholeseq = self.mcfg.wholeseq or body_pose.shape[0] > 1
-        full_pose = torch.cat([global_orient, body_pose], dim=1)
 
-        if wholeseq and betas.shape[0] == 1:
-            betas = betas.repeat(body_pose.shape[0], 1)
+        data_path = os.path.join(NC_DIR, self.mcfg.sim_data_dir, f"{garment_name}_{fname}.h5")
+        displacement = []
+        idx = []
+        if idx_end is None:
+            idx_end = 10000000
+        with h5py.File(data_path, 'r') as f:
+            for k in ['density', 'lame_mu', 'lame_lambda', 'bending_coeff',
+                      'lame_mu_input', 'lame_lambda_input', 'bending_coeff_input']:
+                setattr(sample['cloth'], k, torch.tensor(np.array(f[k], dtype=np.float32)))
+            for i in range(idx_start, idx_end):
+                if f"displacement_{i}" not in f:
+                    break
+                displacement.append(f[f'displacement_{i}'][:])
+                idx.append(f[f'idx_{idx_start}'][:])
+        displacement = np.stack(displacement, axis=0)
+        idx = np.stack(idx, axis=0)
+        displacement = torch.from_numpy(displacement).float().to(global_orient.device)
+        idx = torch.from_numpy(idx).long().to(global_orient.device)
 
-
-        if garment_name in ['longsleeve', 'tshirt', 'tshirt_unzipped', 'dress']:
-            data_path = os.path.join(DEFAULTS['data_root'], self.mcfg.sim_data_dir, f"{garment_name}_{fname}.h5")
-            displacement = []
-            idx = []
-            with h5py.File(data_path, 'r') as f:
-                for i in range(idx_start, idx_end):
-                    displacement.append(f[f'displacement_{i}'][:])
-                    idx.append(f[f'idx_{idx_start}'][:])
-            displacement = np.stack(displacement, axis=0)
-            idx = np.stack(idx, axis=0)
-            displacement = torch.from_numpy(displacement).float().to(global_orient.device)
-            idx = torch.from_numpy(idx).long().to(global_orient.device)
-
+        if sample['obstacle'].prev_pos.ndim == 3:
+            body_vertices = torch.cat((sample['obstacle'].prev_pos[:, :2], sample['obstacle'].target_pos), 1).permute(1, 0, 2)
+            idx_expanded = idx.unsqueeze(2).expand(idx.shape[0], idx.shape[1], 3)
+            nn_body_vertices = body_vertices.gather(1, idx_expanded)
+            vertices = nn_body_vertices - displacement
+            if self.mcfg.keep_length:
+                vertices = torch.cat((vertices[0:1], vertices[0:1], vertices), dim=0)
+        elif sample['obstacle'].prev_pos.ndim == 2:
             body_vertices = torch.cat((sample['obstacle'].prev_pos[None], sample['obstacle'].pos[None], sample['obstacle'].lookup.permute(1, 0, 2)), dim=0)
             idx_expanded = idx.unsqueeze(2).expand(idx.shape[0], idx.shape[1], 3)
             nn_body_vertices = body_vertices.gather(1, idx_expanded)
             vertices = nn_body_vertices - displacement
-
         else:
-            with torch.no_grad():
-                vertices = garment_smpl_model.make_vertices(betas=betas, full_pose=full_pose, transl=transl).numpy()
+            raise ValueError(f"Unknown dimension of obstacle vertices: {sample['obstacle'].prev_pos.shape}")
 
         if not wholeseq:
             vertices = vertices[0]
@@ -779,6 +782,8 @@ class Loader:
         sample = HeteroData()
         sample = self.body_builder.build(sample, sequence, idx)
         sample = self.garment_builder.build(sample, sequence, idx, garment_name, fname)
+        # setattr(sample['cloth'], 'garment_name', garment_name)
+        # setattr(sample['cloth'], 'motion_name', fname)
         return sample
 
 

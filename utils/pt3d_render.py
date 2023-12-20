@@ -15,6 +15,41 @@ from pytorch3d.renderer import (
 )
 
 
+def color_mapping(verts, color):
+    assert color in ['skin', 'cloth']
+    color_dict = {
+        'skin': [250, 237, 205],
+        'cloth': [42, 157, 143]
+    }
+    color = np.array(color_dict[color]) / 255.
+    color = np.tile(np.expand_dims(color, 0), [verts.shape[0], 1])
+    return color
+
+
+def merge_mesh(vs, fs, vcs):
+    v_num = 0
+    new_fs = [fs[0]]
+    new_vcs = []
+    for i in range(len(vs)):
+        if i >= 1:
+            v_num += vs[i-1].shape[0]
+            new_fs.append(fs[i]+v_num)
+        if vcs is not None:
+            if isinstance(vcs[i], str):
+                new_vcs.append(color_mapping(vs[i], vcs[i]))
+            else:
+                if vcs[i].ndim == 1:
+                    new_vcs.append(np.tile(np.expand_dims(vcs[i], 0), [vs[i].shape[0], 1]))
+                else:
+                    new_vcs.append(vcs[i])
+    vs = np.concatenate(vs, 0)
+    new_fs = np.concatenate(new_fs, 0)
+    if vcs is not None:
+        vcs = np.concatenate(new_vcs, 0)
+
+    return vs, new_fs, vcs
+
+
 class Renderer(object):
     def __init__(self, img_size, device=torch.device("cuda:0"), max_size=1.5, bg_color=(0.2, 0.2, 0.2), img_num=1):
         # max_size: when the object has such a size, it can fill the whole image
@@ -119,6 +154,13 @@ class Renderer(object):
 
 
     def set_mesh(self, verts, faces, verts_rgb=None, center=True, set_center=False):
+        if isinstance(verts, list):
+            assert isinstance(faces, list)
+            assert isinstance(verts[0], np.ndarray)
+            verts, faces, verts_rgb = merge_mesh(verts, faces, verts_rgb)
+        else:
+            if isinstance(verts_rgb, str):
+                verts_rgb = color_mapping(verts, verts_rgb)
         if not torch.is_tensor(verts):
             verts = torch.from_numpy(verts).float().to(self.device)
         if not torch.is_tensor(faces):

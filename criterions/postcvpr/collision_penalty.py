@@ -23,6 +23,44 @@ def create(mcfg):
                      eps=mcfg.eps)
 
 
+def find_nn(x, obstacle_x, obstacle_faces, f_normals_f):
+    # x: cloth position (n_verts, 3)
+    # obstacle_x: obstacle position (n_verts, 3)
+    # obstacle_faces: obstacle faces (n_faces, 3)
+    obstacle_face_curr_pos = gather(obstacle_x, obstacle_faces, 0, 1, 1).mean(
+        dim=-2)  # (n_faces, 3), position of every face center
+    _, nn_idx, _ = knn_points(x.unsqueeze(0), obstacle_face_curr_pos.unsqueeze(0),
+                              return_nn=True)
+    nn_idx = nn_idx[0]
+
+    # Compute distances in the new step
+    obstacle_fn = f_normals_f(obstacle_x.unsqueeze(0), obstacle_faces.unsqueeze(0))[0]
+
+    nn_points = gather(obstacle_face_curr_pos, nn_idx, 0, 1, 1)
+    nn_normals = gather(obstacle_fn, nn_idx, 0, 1, 1)
+
+    nn_points = nn_points[:, 0]
+    nn_normals = nn_normals[:, 0]
+    return nn_points, nn_normals
+
+
+def push_away(x, nn_points, nn_normals, eps):
+    device = x.device
+    distance = ((x - nn_points) * nn_normals).sum(dim=-1)
+    interpenetration = torch.maximum(eps - distance, torch.FloatTensor([0]).to(device))
+    x = x + interpenetration[:, None] * nn_normals
+    return x
+
+
+def collision_handling(x, obstacle_x, obstacle_faces, f_normals_f, eps=4e-3):
+    # x: cloth position (n_verts, 3)
+    # obstacle_x: obstacle position (n_verts, 3)
+    # obstacle_faces: obstacle faces (n_faces, 3)
+    nn_points, nn_normals = find_nn(x, obstacle_x, obstacle_faces, f_normals_f)
+    x = push_away(x, nn_points, nn_normals, eps=eps)
+    return x
+
+
 class Criterion(nn.Module):
     def __init__(self, weight_start, weight_max, start_rampup_iteration, n_rampup_iterations, eps=1e-3):
         super().__init__()
@@ -33,6 +71,7 @@ class Criterion(nn.Module):
         self.eps = eps
         self.f_normals_f = FaceNormals()
         self.name = 'collision_penalty'
+        self.nn_idx = None
 
     def get_weight(self, iter):
         iter = iter - self.start_rampup_iteration
@@ -42,7 +81,7 @@ class Criterion(nn.Module):
         weight = self.weight_start + (self.weight_max - self.weight_start) * progress
         return weight
 
-    def calc_loss(self, example):
+    def calc_loss(self, example, use_cache=False):
         obstacle_next_pos = example['obstacle'].target_pos
         obstacle_curr_pos = example['obstacle'].pos
         obstacle_faces = example['obstacle'].faces_batch.T
@@ -51,10 +90,15 @@ class Criterion(nn.Module):
         next_pos = example['cloth'].pred_pos
 
         # Find correspondences in current step
-        obstacle_face_curr_pos = gather(obstacle_curr_pos, obstacle_faces, 0, 1, 1).mean(dim=-2)
-        _, nn_idx, _ = knn_points(curr_pos.unsqueeze(0), obstacle_face_curr_pos.unsqueeze(0),
-                                  return_nn=True)
-        nn_idx = nn_idx[0]
+        if use_cache:
+            assert self.nn_idx is not None
+            nn_idx = self.nn_idx
+        else:
+            obstacle_face_curr_pos = gather(obstacle_curr_pos, obstacle_faces, 0, 1, 1).mean(dim=-2)
+            _, nn_idx, _ = knn_points(curr_pos.unsqueeze(0), obstacle_face_curr_pos.unsqueeze(0),
+                                      return_nn=True)
+            nn_idx = nn_idx[0]
+            self.nn_idx = nn_idx
 
         # Compute distances in the new step
         obstacle_face_next_pos = gather(obstacle_next_pos, obstacle_faces, 0, 1, 1).mean(dim=-2)
@@ -75,7 +119,7 @@ class Criterion(nn.Module):
 
         return loss, interpenetration
 
-    def forward(self, sample):
+    def forward(self, sample, use_cache=False):
         B = sample.num_graphs
         iter_num = sample['cloth'].iter[0].item()
         weight = self.get_weight(iter_num)
@@ -83,7 +127,7 @@ class Criterion(nn.Module):
         loss_list = []
         per_vert_list = []
         for i in range(B):
-            loss_, per_vert_ = self.calc_loss(sample.get_example(i))
+            loss_, per_vert_ = self.calc_loss(sample.get_example(i), use_cache=use_cache)
             loss_list.append(loss_)
             per_vert_list.append(per_vert_)
 

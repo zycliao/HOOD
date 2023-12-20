@@ -14,11 +14,12 @@ from pathlib import Path
 
 
 if __name__ == '__main__':
-    process_idx, process_num = sys.argv[-2:]
-    process_idx = int(process_idx)
-    process_num = int(process_num)
-    # process_idx = 0
-    # process_num = 1
+    # process_idx, process_num = sys.argv[-2:]
+    # process_idx = int(process_idx)
+    # process_num = int(process_num)
+    # import time; time.sleep(20*60)
+    process_idx = 0
+    process_num = 1
 
     material_path = os.path.join(NC_DIR, "simulation_hood_full", "materials.npz")
     materials = np.load(material_path)
@@ -30,9 +31,12 @@ if __name__ == '__main__':
     config_name = 'postcvpr'
     modules, experiment_config = load_params(config_name)
 
-    for i in range(process_idx, total_samples, process_num):
-    # for i in range(total_samples-1, 0, -1):
+    # idx = np.where(np.logical_and(materials['garment_names']=='shorts',
+    #                                       materials['motion_names']=='tshirt_shape00_104_04.pkl'))[0][0]
 
+    # for i in range(process_idx, total_samples, process_num):
+    for i in range(total_samples-1, 0, -1):
+    # for i in [idx]:
         # Set material paramenters, see configs/cvpr.yaml for the training ranges for each parameter
         config_dict = dict()
         config_dict['density'] = float(materials['density'][i])
@@ -45,6 +49,7 @@ if __name__ == '__main__':
         save_dir = os.path.join(NC_DIR, "simulation_hood_full", garment_name)
         os.makedirs(save_dir, exist_ok=True)
         save_path = os.path.join(save_dir, motion_name.replace('.pkl', '.pc2'))
+
         if os.path.exists(save_path):
             continue
 
@@ -71,7 +76,7 @@ if __name__ == '__main__':
         sequence = move2device(sequence, 'cuda:0')
 
         # run simulation
-        trajectories_dict = runner.forward_simulation_lbfgs(sequence, start_step=0, n_steps=-1)
+        trajectories_dict = runner.forward_simulation(sequence, start_step=0, n_steps=-1, explicit_solve_collision=True)
         print(f"Saved to {save_path}")
         writePC2(save_path, trajectories_dict['pred'])
         body_save_path = os.path.join(body_save_dir, motion_name.replace(".pkl", ".pc2"))

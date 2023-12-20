@@ -25,6 +25,7 @@ from utils.cloth_and_material import FaceNormals, ClothMatAug
 from utils.common import move2device, save_checkpoint, add_field_to_pyg_batch
 from utils.defaults import DEFAULTS
 from runners.postcvpr import Runner as BaseRunner
+from runners.postcvpr import create_optimizer, run_epoch
 
 
 @dataclass
